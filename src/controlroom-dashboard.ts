@@ -2262,6 +2262,102 @@ export class ControlRoomDashboard extends LitElement {
     .settings-save-bar ha-icon {--mdc-icon-size:17px}
     @media(max-width:500px){.settings-save-bar{bottom:8px;padding:12px}.settings-save-copy{flex-basis:100%}.settings-cancel,.settings-save{flex:1}}
 
+    /* ControlRoom mobile compact: overrides only at phone widths. */
+    @media (max-width: 650px) {
+      .main { padding: 12px 12px 24px; }
+      .topbar { gap: 9px; margin-bottom: 18px; }
+      .topbar-left { min-height: 28px; }
+      .page-heading { font-size: 14px; }
+      .smart-bar {
+        box-sizing: border-box; display: grid; width: 100%;
+        grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+        gap: 10px 8px; padding: 12px; min-height: 0;
+        border-radius: 17px; align-items: center;
+      }
+      .smart-bar .smart-part { min-width: 0; width: auto; flex: initial; }
+      .smart-bar .smart-part:has(.smart-waste) { grid-column: 1 / -1; }
+      .smart-bar .smart-divider { display: none; }
+      .smart-bar .weather { gap: 7px; }
+      .smart-bar .weather-icon ha-icon { --mdc-icon-size: 22px; }
+      .smart-bar .weather-temp, .smart-bar .smart-segment strong { font-size: 14px; }
+      .smart-bar .weather-condition, .smart-bar .smart-segment small { font-size: 11px; }
+      .smart-bar .smart-segment > ha-icon { --mdc-icon-size: 21px; }
+      .smart-bar .smart-waste strong { max-width: none; white-space: normal; line-height: 1.25; }
+      .hero-content { gap: 10px; }
+      .eyebrow { font-size: 10px; }
+      .welcome-title { gap: 9px; }
+      .welcome-title h1 { font-size: clamp(21px, 5.7vw, 27px); line-height: 1.18; margin: 6px 0; }
+      .pill-avatar.avatar-large { flex-basis: 35px; width: 35px; height: 35px; }
+      .hero-message p { font-size: 12px; line-height: 1.4; }
+      .person-pill { padding: 3px 10px 3px 3px; gap: 7px; }
+      .person-pill .pill-avatar { flex-basis: 29px; width: 29px; height: 29px; }
+      .overview-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 20px; }
+      .overview-card { min-height: 118px; padding: 14px; border-radius: 17px; }
+      .card-icon ha-icon { --mdc-icon-size: 22px; }
+      .card-title { font-size: 14px; }
+      .card-subtitle { font-size: 10px; line-height: 1.35; }
+    }
+    @media (max-width: 360px) {
+      .main { padding-left: 10px; padding-right: 10px; }
+      .overview-card { min-height: 110px; padding: 11px; }
+      .welcome-title h1 { font-size: 20px; }
+      .smart-bar { padding: 10px; }
+    }
+
+
+    /* Adaptive Premium: respond to available dashboard width, not just screen width. */
+    .main { container-type: inline-size; min-width: 0; }
+    .overview-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr));
+      gap: clamp(10px, 1.4vw, 16px);
+    }
+    .overview-card {
+      min-width: 0;
+      min-height: clamp(122px, 13vw, 175px);
+      padding: clamp(13px, 1.6vw, 22px);
+    }
+    .hero-message h1 { overflow-wrap: anywhere; }
+    .smart-bar { max-width: 100%; box-sizing: border-box; }
+    .smart-part { min-width: 0; }
+    .smart-waste strong { overflow-wrap: anywhere; }
+
+    @container (max-width: 720px) {
+      .topbar { flex-wrap: wrap; gap: 10px; }
+      .topbar-right { max-width: 100%; min-width: 0; }
+      .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 22px; }
+      .overview-card { min-height: 125px; padding: 15px; border-radius: 17px; }
+      .hero-content { gap: 12px; }
+      .welcome-title h1 { font-size: clamp(21px, 4.5cqw, 30px); line-height: 1.2; }
+    }
+    @container (max-width: 470px) {
+      .topbar { margin-bottom: 16px; }
+      .smart-bar {
+        display: grid;
+        width: 100%;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 10px 8px;
+        padding: 11px;
+        min-height: 0;
+      }
+      .smart-bar .smart-part { width: auto; flex: initial; }
+      .smart-bar .smart-part:has(.smart-waste) { grid-column: 1 / -1; }
+      .smart-bar .smart-divider { display: none; }
+      .smart-bar .smart-waste strong { max-width: 100%; white-space: normal; }
+      .hero-content { gap: 10px; }
+      .welcome-title h1 { font-size: clamp(20px, 5.4cqw, 26px); }
+      .hero-message p { font-size: 12px; }
+      .overview-grid { gap: 9px; margin-top: 18px; }
+      .overview-card { min-height: 116px; padding: 12px; }
+      .card-title { font-size: 14px; }
+      .card-subtitle { font-size: 10px; }
+    }
+    @container (max-width: 315px) {
+      .overview-grid { grid-template-columns: 1fr; }
+      .overview-card { min-height: 105px; }
+      .smart-bar { grid-template-columns: 1fr; }
+      .smart-bar .smart-part:has(.smart-waste) { grid-column: auto; }
+    }
+
   `;
 
   protected render() {
