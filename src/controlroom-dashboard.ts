@@ -2,15 +2,38 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 
+interface HomeAssistant {
+  states: Record<string, unknown>;
+  user?: {
+    name?: string;
+  };
+}
+
+interface DashboardConfig {
+  type?: string;
+  title?: string;
+}
+
+declare global {
+  interface Window {
+    customCards?: Array<{
+      type: string;
+      name: string;
+      description: string;
+      preview?: boolean;
+    }>;
+  }
+}
+
 @customElement("controlroom-dashboard")
 export class ControlRoomDashboard extends LitElement {
   @property({ attribute: false })
-  public hass?: any;
+  public hass?: HomeAssistant;
 
   @property({ attribute: false })
-  public config?: any;
+  public config: DashboardConfig = {};
 
-  public setConfig(config: any): void {
+  public setConfig(config: DashboardConfig): void {
     this.config = config;
   }
 
@@ -103,5 +126,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "controlroom-dashboard",
   name: "ControlRoom Dashboard",
-  description: "Premium intelligent dashboard for Home Assistant"
+  description:
+    "Premium intelligent dashboard for Home Assistant",
+  preview: true
 });
