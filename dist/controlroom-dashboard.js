@@ -139,6 +139,16 @@ const translations = {
         locationUnknown: "Location unknown",
         peopleCount: "people",
         lights: "Lights",
+        allLights: "All lights",
+        allOn: "All on",
+        allOff: "All off",
+        brightness: "Brightness",
+        lighting: "Lighting",
+        allRooms: "All rooms",
+        unassigned: "Unassigned",
+        groups: "Groups",
+        groupsLater: "Group creation in Home Assistant is coming next.",
+        lightDetails: "Select a light to adjust it",
         lightsOn: "on",
         lightsOff: "off",
         noLights: "No lights found",
@@ -194,6 +204,16 @@ const translations = {
         locationUnknown: "Standort unbekannt",
         peopleCount: "Personen",
         lights: "Lichter",
+        allLights: "Alle Lichter",
+        allOn: "Alle an",
+        allOff: "Alle aus",
+        brightness: "Helligkeit",
+        lighting: "Beleuchtung",
+        allRooms: "Alle Räume",
+        unassigned: "Ohne Raum",
+        groups: "Gruppen",
+        groupsLater: "Gruppen im Home Assistant erstellen: nächster Schritt.",
+        lightDetails: "Licht auswählen und einstellen",
         lightsOn: "an",
         lightsOff: "aus",
         noLights: "Keine Lichter gefunden",
@@ -249,6 +269,16 @@ const translations = {
         locationUnknown: "Localização desconhecida",
         peopleCount: "pessoas",
         lights: "Luzes",
+        allLights: "Todas as luzes",
+        allOn: "Ligar todas",
+        allOff: "Desligar todas",
+        brightness: "Brilho",
+        lighting: "Iluminação",
+        allRooms: "Todos os ambientes",
+        unassigned: "Sem ambiente",
+        groups: "Grupos",
+        groupsLater: "Criação de grupos no Home Assistant: próxima etapa.",
+        lightDetails: "Selecione uma luz para ajustar",
         lightsOn: "acesas",
         lightsOff: "apagadas",
         noLights: "Nenhuma luz encontrada",
@@ -333,12 +363,52 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.activePage = "home";
         this.mobileMenuOpen = false;
         this.currentTime = new Date();
+        this.selectedLightId = "";
+        this.selectedRoom = "";
+        this.lightsTab = "lights";
+        this.areaNames = {};
+        this.lightAreas = {};
+        this.registryLoaded = false;
+        this.registryLoading = false;
     }
     setConfig(config) {
         this.config = config;
     }
     getCardSize() {
         return 12;
+    }
+    updated() {
+        if (this.hass?.callWS && !this.registryLoaded && !this.registryLoading) {
+            void this.loadAreaRegistry();
+        }
+    }
+    async loadAreaRegistry() {
+        if (!this.hass?.callWS)
+            return;
+        this.registryLoading = true;
+        try {
+            const [areasRaw, entitiesRaw, devicesRaw] = await Promise.all([
+                this.hass.callWS({ type: "config/area_registry/list" }),
+                this.hass.callWS({ type: "config/entity_registry/list" }),
+                this.hass.callWS({ type: "config/device_registry/list" })
+            ]);
+            const areas = areasRaw;
+            const entities = entitiesRaw;
+            const devices = devicesRaw;
+            const deviceArea = new Map(devices.map(d => [d.id, d.area_id || ""]));
+            this.areaNames = Object.fromEntries(areas.map(a => [a.area_id, a.name]));
+            this.lightAreas = Object.fromEntries(entities.filter(e => e.entity_id.startsWith("light.")).map(e => [
+                e.entity_id, e.area_id || (e.device_id ? deviceArea.get(e.device_id) : "") || ""
+            ]));
+            this.registryLoaded = true;
+        }
+        catch (error) {
+            console.warn("ControlRoom: area registry not available", error);
+            this.registryLoaded = true;
+        }
+        finally {
+            this.registryLoading = false;
+        }
     }
     connectedCallback() {
         super.connectedCallback();
@@ -531,50 +601,200 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             console.error(this.t("lightActionError"), error);
         }
     }
+    getLightRoom(light) {
+        const areaId = this.lightAreas[light.entity_id];
+        return areaId && this.areaNames[areaId] ? this.areaNames[areaId] : this.t("unassigned");
+    }
+    getBrightness(light) {
+        const raw = light.attributes.brightness;
+        return typeof raw === "number" && Number.isFinite(raw)
+            ? Math.round(raw / 255 * 100) : 100;
+    }
+    supportsBrightness(light) {
+        const modes = light.attributes.supported_color_modes;
+        return Array.isArray(modes) && modes.some(m => m !== "onoff" && m !== "unknown")
+            || (typeof light.attributes.supported_features === "number"
+                && (light.attributes.supported_features & 1) !== 0);
+    }
+    async setLightBrightness(light, value) {
+        if (!this.hass?.callService)
+            return;
+        try {
+            await this.hass.callService("light", "turn_on", {
+                entity_id: light.entity_id, brightness_pct: value
+            });
+        }
+        catch (error) {
+            console.error(this.t("lightActionError"), error);
+        }
+    }
+    async setAllLights(on, lights) {
+        if (!this.hass?.callService)
+            return;
+        const ids = lights.filter(l => l.state === "on" || l.state === "off").map(l => l.entity_id);
+        if (!ids.length)
+            return;
+        try {
+            await this.hass.callService("light", on ? "turn_on" : "turn_off", { entity_id: ids });
+        }
+        catch (error) {
+            console.error(this.t("lightActionError"), error);
+        }
+    }
+    renderPendant(on, brightness = 75) {
+        return b `<svg class="pendant" viewBox="0 0 150 180" aria-hidden="true">
+      <defs>
+        <radialGradient id="cr-ambient-glow">
+          <stop offset="0" stop-color="#ffcd82" stop-opacity=${on ? brightness / 115 : 0}/>
+          <stop offset="1" stop-color="#ffcd82" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="cr-metal" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#62535c"/>
+          <stop offset=".5" stop-color="#1b1920"/>
+          <stop offset="1" stop-color="#49414b"/>
+        </linearGradient>
+      </defs>
+      <ellipse cx="75" cy="127" rx="74" ry="52" fill="url(#cr-ambient-glow)"/>
+      <path d="M75 0V54" stroke="#716777" stroke-width="2"/>
+      <rect x="69" y="51" width="12" height="12" rx="3" fill="#302a32"/>
+      <path d="M69 60Q45 69 31 111Q75 127 119 111Q105 69 81 60Z"
+        fill="url(#cr-metal)" stroke="#6c5a68"/>
+      <ellipse cx="75" cy="111" rx="44" ry="8" fill=${on ? "#ffd18b" : "#403842"}/>
+      <ellipse cx="75" cy="112" rx="26" ry="4" fill=${on ? "#fff1ca" : "#514650"}/>
+    </svg>`;
+    }
     renderLightsCard() {
         const lights = this.getLights();
-        const on = lights.filter((light) => light.state === "on").length;
-        const off = lights.filter((light) => light.state === "off").length;
+        const on = lights.filter(l => l.state === "on").length;
+        const off = lights.filter(l => l.state === "off").length;
+        const lit = lights.filter(l => l.state === "on");
+        const avg = lit.length ? lit.reduce((n, l) => n + this.getBrightness(l), 0) / lit.length : 0;
+        const roomNames = [...new Set(lit.map(l => this.getLightRoom(l)))].slice(0, 3);
         return b `
-      <article class="overview-card lights-card">
-        <div class="lights-card-heading">
-          <div class="card-icon">${this.renderIcon("mdi:lightbulb-outline")}</div>
-          <div class="lights-summary">
-            <span class="lights-count">${on}</span>
-            <span>${this.t("lightsOn")}</span>
-            <span class="lights-summary-separator">·</span>
-            <span>${off} ${this.t("lightsOff")}</span>
+      <article class="overview-card lights-card premium-lights ${on ? "has-light" : ""}">
+        <div class="pendant-corner">${this.renderPendant(on > 0, avg)}</div>
+        <div class="premium-lights-content">
+          <div class="card-icon">${this.renderIcon("mdi:lightbulb-on-outline")}</div>
+          <div class="card-title">${this.t("lights")}</div>
+          <div class="premium-count"><strong>${on}</strong> ${this.t("lightsOn")}
+            <span>· ${off} ${this.t("lightsOff")}</span>
+          </div>
+          <div class="premium-actions">
+            <button type="button" class="glass-action" ?disabled=${!on || !this.hass?.callService}
+              @click=${() => this.setAllLights(false, lights)}>
+              ${this.renderIcon("mdi:power")} ${this.t("allOff")}
+            </button>
+            <button type="button" class="glass-action" @click=${() => this.navigate("lights")}>
+              ${this.t("lighting")} ${this.renderIcon("mdi:arrow-right")}
+            </button>
+          </div>
+          <div class="premium-rooms">
+            ${roomNames.length ? roomNames.map(name => b `
+              <span class="room-chip">${this.renderIcon("mdi:lightbulb-on-outline")}${name}</span>
+            `) : b `<span class="room-chip">${this.t("noLights") === "" ? "" : `${lights.length} ${this.t("lights")}`}</span>`}
           </div>
         </div>
-        <div class="card-title">${this.t("lights")}</div>
-        ${lights.length ? b `
-          <div class="light-list">
-            ${lights.map((light) => {
+      </article>
+    `;
+    }
+    renderLightsPage() {
+        const lights = this.getLights();
+        const on = lights.filter(l => l.state === "on").length;
+        const available = lights.filter(l => l.state === "on" || l.state === "off");
+        const rooms = [...new Set(lights.map(l => this.getLightRoom(l)))].sort((a, b) => a.localeCompare(b, this.getLanguage()));
+        const filtered = this.selectedRoom ? lights.filter(l => this.getLightRoom(l) === this.selectedRoom) : lights;
+        const chosen = lights.find(l => l.entity_id === this.selectedLightId) || filtered[0];
+        const avg = on ? lights.filter(l => l.state === "on").reduce((n, l) => n + this.getBrightness(l), 0) / on : 0;
+        return b `
+      <section class="lighting-studio">
+        <div class="studio-heading">
+          <div><div class="eyebrow">CONTROLROOM / SMART HOME</div>
+            <h1>${this.t("lighting")}</h1></div>
+          <span class="studio-total">${on} ${this.t("lightsOn")} · ${available.length - on} ${this.t("lightsOff")}</span>
+        </div>
+        <div class="studio-hero ${on ? "lit" : ""}">
+          <div class="studio-hero-info">
+            <div class="studio-kicker">${this.t("lighting")}</div>
+            <div class="studio-number"><strong>${on}</strong> / ${available.length} ${this.t("lightsOn")}</div>
+            <div class="studio-progress"><span style=${`width:${available.length ? on / available.length * 100 : 0}%`}></span></div>
+            <div class="studio-actions">
+              <button ?disabled=${!this.hass?.callService} @click=${() => this.setAllLights(true, lights)}>${this.renderIcon("mdi:weather-sunny")}${this.t("allOn")}</button>
+              <button ?disabled=${!this.hass?.callService} @click=${() => this.setAllLights(false, lights)}>${this.renderIcon("mdi:weather-night")}${this.t("allOff")}</button>
+            </div>
+          </div>
+          <div class="studio-pendant">${this.renderPendant(on > 0, avg)}</div>
+        </div>
+        <div class="ambient-rooms">
+          ${rooms.map(room => {
+            const roomLights = lights.filter(l => this.getLightRoom(l) === room);
+            const roomOn = roomLights.filter(l => l.state === "on").length;
+            return b `<button type="button" class="ambient-room ${roomOn ? "illuminated" : ""}"
+              @click=${() => { this.selectedRoom = room; this.selectedLightId = ""; this.lightsTab = "lights"; }}>
+              <span class="ambient-room-glow"></span>
+              <span class="ambient-room-icon">${this.renderIcon("mdi:home-lightbulb-outline")}</span>
+              <span class="ambient-room-name">${room}</span>
+              <span class="ambient-room-count">${roomOn} / ${roomLights.length}</span>
+            </button>`;
+        })}
+        </div>
+        <div class="studio-tabs">
+          <button class=${this.lightsTab === "lights" ? "active" : ""} @click=${() => this.lightsTab = "lights"}>${this.t("lights")}</button>
+          <button class=${this.lightsTab === "groups" ? "active" : ""} @click=${() => this.lightsTab = "groups"}>${this.t("groups")}</button>
+        </div>
+        ${this.lightsTab === "groups" ? b `
+          <div class="studio-empty">${this.renderIcon("mdi:lightbulb-group-outline")} ${this.t("groupsLater")}</div>
+        ` : b `
+          <div class="room-filters">
+            <button class=${!this.selectedRoom ? "active" : ""} @click=${() => this.selectedRoom = ""}>${this.t("allRooms")}</button>
+            ${rooms.map(room => b `<button class=${this.selectedRoom === room ? "active" : ""}
+              @click=${() => { this.selectedRoom = room; this.selectedLightId = ""; }}>${room}</button>`)}
+          </div>
+          <div class="studio-grid">
+            ${filtered.map(light => {
             const active = light.state === "on";
+            const selected = chosen?.entity_id === light.entity_id;
             const available = active || light.state === "off";
-            const name = this.getLightName(light);
-            return b `
-                <button
-                  type="button"
-                  class="light-row ${active ? "is-on" : ""}"
-                  ?disabled=${!available || !this.hass?.callService}
-                  title=${`${this.t("toggleLight")}: ${name}`}
-                  aria-label=${`${this.t("toggleLight")}: ${name}`}
-                  aria-pressed=${active ? "true" : "false"}
-                  @click=${() => this.toggleLight(light)}
-                >
-                  <span class="light-row-icon">${this.renderIcon(active ? "mdi:lightbulb-on" : "mdi:lightbulb-outline")}</span>
-                  <span class="light-row-name">${name}</span>
-                  <span class="light-row-status">${available
-                ? this.t(active ? "lightsOn" : "lightsOff")
-                : this.t("lightUnavailable")}</span>
-                  <span class="light-row-switch ${active ? "on" : ""}" aria-hidden="true"><span></span></span>
+            return b `<article class="studio-light ${selected ? "selected" : ""} ${active ? "active" : ""}">
+                <button class="studio-light-select" @click=${() => this.selectedLightId = light.entity_id}>
+                  <span class="studio-light-icon">${this.renderIcon(active ? "mdi:lightbulb-on" : "mdi:lightbulb-outline")}</span>
+                  <span class="studio-light-state">${available ? this.t(active ? "lightsOn" : "lightsOff") : this.t("lightUnavailable")}</span>
+                  <span class="studio-light-name">${this.getLightName(light)}</span>
+                  <span class="studio-light-room">${this.getLightRoom(light)}</span>
+                  <span class="studio-light-level">${this.supportsBrightness(light) ? `${this.getBrightness(light)}%` : ""}</span>
                 </button>
-              `;
+                <button type="button" class="studio-toggle ${active ? "on" : ""}"
+                  ?disabled=${!available || !this.hass?.callService}
+                  aria-label=${`${this.t("toggleLight")}: ${this.getLightName(light)}`}
+                  aria-pressed=${active ? "true" : "false"} @click=${() => this.toggleLight(light)}>
+                  ${this.renderIcon(active ? "mdi:check-circle" : "mdi:circle-outline")}
+                </button>
+              </article>`;
         })}
           </div>
-        ` : b `<div class="card-subtitle">${this.t("noLights")}</div>`}
-      </article>
+          ${chosen ? b `
+            <div class="studio-detail">
+              <div class="studio-detail-head">
+                <div><div class="studio-kicker">${this.t("lightDetails")}</div>
+                  <h2>${this.getLightName(chosen)}</h2>
+                  <span>${this.getLightRoom(chosen)}</span></div>
+                <button class="studio-toggle ${chosen.state === "on" ? "on" : ""}"
+                  ?disabled=${(chosen.state !== "on" && chosen.state !== "off") || !this.hass?.callService}
+                  @click=${() => this.toggleLight(chosen)}
+                  aria-label=${this.t("toggleLight")}>
+                  ${this.renderIcon(chosen.state === "on" ? "mdi:check-circle" : "mdi:circle-outline")}
+                </button>
+              </div>
+              ${this.supportsBrightness(chosen) ? b `
+                <div class="brightness-label"><span>${this.t("brightness")}</span><strong>${this.getBrightness(chosen)}%</strong></div>
+                <input class="brightness-slider" type="range" min="1" max="100"
+                  .value=${String(this.getBrightness(chosen))}
+                  ?disabled=${!this.hass?.callService}
+                  @change=${(e) => this.setLightBrightness(chosen, Number(e.target.value))}/>
+              ` : A}
+            </div>
+          ` : b `<div class="studio-empty">${this.t("noLights")}</div>`}
+        `}
+      </section>
     `;
     }
     renderSidebar() {
@@ -672,6 +892,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     renderPage() {
         if (this.activePage === "home")
             return this.renderHome();
+        if (this.activePage === "lights")
+            return this.renderLightsPage();
         const page = pages.find((item) => item.id === this.activePage);
         return b `
       <section class="placeholder-page">
@@ -1135,6 +1357,85 @@ ControlRoomDashboard.styles = i$3 `
 
 
     .lights-card { gap: 13px; order: 3; }
+    .premium-lights { position: relative; min-height: 230px; overflow: hidden; }
+    .premium-lights.has-light { border-color: rgba(215,165,104,.32); }
+    .premium-lights-content { position:relative; z-index:1; display:flex; flex-direction:column; gap:12px; height:100%; }
+    .premium-lights .card-icon { color:#f1bf77; }
+    .pendant-corner { position:absolute; right:-6px; top:-20px; width:135px; pointer-events:none; }
+    .pendant { display:block; width:100%; height:auto; }
+    .premium-count { font-size:13px; color:#c9bed1; }
+    .premium-count strong { font-size:28px; color:#fff; }
+    .premium-count span { color:#a99caf; }
+    .premium-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:auto; }
+    .glass-action { display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 11px; color:#eee2f5; background:rgba(145,109,174,.25); border:1px solid rgba(211,173,239,.2); border-radius:999px; cursor:pointer; font-size:11px; }
+    .glass-action:disabled { opacity:.45; cursor:not-allowed; }
+    .glass-action ha-icon { --mdc-icon-size:16px; }
+    .premium-rooms { display:flex; flex-wrap:wrap; gap:5px; }
+    .room-chip { display:flex; align-items:center; gap:4px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.05); padding:5px 8px; border-radius:999px; font-size:10px; color:#d5c9dd; }
+    .room-chip ha-icon { --mdc-icon-size:13px; color:#e6b877; }
+    .lighting-studio { max-width:1100px; margin:auto; }
+    .studio-heading { display:flex; justify-content:space-between; align-items:end; gap:15px; margin-bottom:20px; }
+    .studio-heading h1 { margin:7px 0 0; }
+    .studio-total { font-size:12px; color:#b5a8c1; }
+    .studio-hero { position:relative; display:flex; min-height:185px; overflow:hidden; padding:22px; border:1px solid rgba(199,164,225,.2); border-radius:22px; background:linear-gradient(110deg,#30223d,#1b1928); }
+    .studio-hero.lit { background:radial-gradient(ellipse at 88% 85%,rgba(223,158,78,.22),transparent 48%),linear-gradient(110deg,#30223d,#1b1928); }
+    .studio-hero-info { position:relative; z-index:1; width:min(70%,540px); }
+    .studio-kicker { font-size:11px; color:#c4b1d0; }
+    .studio-number { margin:9px 0 13px; font-size:14px; }
+    .studio-number strong { font-size:28px; }
+    .studio-progress { height:5px; background:#51435d; border-radius:999px; overflow:hidden; }
+    .studio-progress span { display:block; height:100%; background:#d0a5ed; transition:width .3s; }
+    .studio-actions { display:flex; gap:8px; margin-top:15px; }
+    .studio-actions button { display:flex; align-items:center; justify-content:center; gap:7px; flex:1; padding:9px; border:1px solid rgba(255,255,255,.17); border-radius:999px; background:rgba(255,255,255,.035); color:#f1eaf6; cursor:pointer; }
+    .studio-actions button:disabled { opacity:.4; }
+    .studio-actions ha-icon { --mdc-icon-size:16px; }
+    .studio-pendant { position:absolute; right:30px; top:-24px; width:170px; }
+    .ambient-rooms { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:10px; margin-top:14px; }
+    .ambient-room { position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:7px; min-height:105px; padding:14px; overflow:hidden; border-radius:16px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.035); color:#c9bfd3; text-align:left; cursor:pointer; }
+    .ambient-room.illuminated { border-color:rgba(231,178,109,.35); }
+    .ambient-room-glow { position:absolute; inset:0; pointer-events:none; opacity:0; background:radial-gradient(ellipse at 80% 90%,rgba(247,184,96,.35),transparent 72%); transition:opacity 450ms ease; }
+    .ambient-room.illuminated .ambient-room-glow { opacity:1; }
+    .ambient-room-icon,.ambient-room-name,.ambient-room-count { position:relative; z-index:1; }
+    .ambient-room-icon { color:#9c8bac; }
+    .ambient-room.illuminated .ambient-room-icon { color:#f4c786; }
+    .ambient-room-name { font-size:12px; font-weight:650; }
+    .ambient-room-count { color:#aa9cb6; font-size:11px; }
+    @media (prefers-reduced-motion:reduce) { .ambient-room-glow { transition:none; } }
+    .studio-tabs { display:grid; grid-template-columns:1fr 1fr; margin:18px 0 12px; padding:4px; border-radius:999px; background:rgba(255,255,255,.035); }
+    .studio-tabs button { border:0; padding:9px; border-radius:999px; color:#c7bacf; background:transparent; cursor:pointer; }
+    .studio-tabs button.active { background:rgba(194,159,221,.2); color:#fff; }
+    .room-filters { display:flex; gap:7px; overflow-x:auto; padding-bottom:12px; }
+    .room-filters button { white-space:nowrap; padding:7px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.16); background:transparent; color:#c6b9d1; cursor:pointer; }
+    .room-filters button.active { background:#e6dbe9; color:#251e2c; }
+    .studio-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .studio-light { position:relative; min-height:145px; padding:15px; border-radius:18px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.045); }
+    .studio-light.selected { border-color:rgba(203,156,236,.65); background:rgba(158,112,189,.14); }
+    .studio-light.active { box-shadow:inset 0 0 32px rgba(244,190,105,.045); }
+    .studio-light-select { display:flex; flex-direction:column; align-items:flex-start; width:100%; height:100%; border:0; background:transparent; color:inherit; cursor:pointer; text-align:left; }
+    .studio-light-icon { display:grid; place-items:center; width:35px; height:35px; border-radius:11px; color:#a89db5; background:rgba(255,255,255,.06); }
+    .studio-light.active .studio-light-icon { color:#f2c887; background:rgba(232,179,96,.16); }
+    .studio-light-state { position:absolute; right:14px; top:16px; color:#a99db5; font-size:10px; }
+    .studio-light.active .studio-light-state { color:#87d5ad; }
+    .studio-light-name { margin-top:13px; font-size:14px; font-weight:650; }
+    .studio-light-room { margin-top:4px; color:#a99eb6; font-size:11px; }
+    .studio-light-level { margin-top:10px; color:#bca8ca; font-size:11px; }
+    .studio-toggle { position:absolute; right:15px; bottom:15px; padding:4px; border:0; background:transparent; color:#756b80; cursor:pointer; }
+    .studio-toggle.on { color:#d6b3ed; }
+    .studio-toggle ha-icon { --mdc-icon-size:23px; }
+    .studio-detail { position:relative; margin-top:15px; padding:22px; border-radius:20px; border:1px solid rgba(191,149,220,.25); background:rgba(146,108,178,.1); }
+    .studio-detail-head h2 { margin:6px 0; font-size:20px; }
+    .studio-detail-head span { font-size:12px; color:#b7a8c5; }
+    .studio-detail .studio-toggle { top:20px; bottom:auto; }
+    .brightness-label { display:flex; justify-content:space-between; margin-top:22px; margin-bottom:12px; font-size:13px; }
+    .brightness-slider { width:100%; accent-color:#c7a2e4; cursor:pointer; }
+    .studio-empty { display:flex; align-items:center; gap:12px; padding:25px; color:#b7a8c5; border:1px solid rgba(255,255,255,.08); border-radius:18px; }
+    @media (max-width:600px) {
+      .studio-grid { grid-template-columns:1fr; }
+      .studio-hero-info { width:80%; }
+      .studio-pendant { right:-40px; opacity:.6; }
+      .studio-heading { align-items:start; flex-direction:column; }
+    }
+
     .overview-card:nth-child(3) { order: 4; }
     .overview-card:nth-child(4) { order: 5; }
     .lights-card-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -1269,6 +1570,21 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "currentTime", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "selectedLightId", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "selectedRoom", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "lightsTab", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "areaNames", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "lightAreas", void 0);
 ControlRoomDashboard = __decorate([
     t("controlroom-dashboard")
 ], ControlRoomDashboard);
