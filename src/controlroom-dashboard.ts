@@ -364,7 +364,37 @@ export class ControlRoomDashboard extends LitElement {
   @state() private welcomeShowGreeting = true;
   @state() private welcomeEyebrow = "";
   @state() private welcomeSubtitle = "";
+  @state() private smartShowWeather = true;
+  @state() private smartShowClock = true;
+  @state() private smartShowWaste = true;
+  @state() private wasteSource: "auto" | "calendar" | "sensor" = "auto";
+  @state() private wasteEntity = "";
+  @state() private wasteLabel = "";
+  @state() private wasteIcon = "mdi:trash-can-outline";
+  @state() private wasteDateMode: "relative" | "date" | "both" = "relative";
   private clockInterval?: ReturnType<typeof setInterval>;
+
+  private restoreSmartSettings(): void {
+    try {
+      const data = JSON.parse(localStorage.getItem("controlroom-smartbar-v1") || "{}");
+      if (typeof data.weather === "boolean") this.smartShowWeather = data.weather;
+      if (typeof data.clock === "boolean") this.smartShowClock = data.clock;
+      if (typeof data.waste === "boolean") this.smartShowWaste = data.waste;
+      if (["auto", "calendar", "sensor"].includes(data.source)) this.wasteSource = data.source;
+      if (typeof data.entity === "string") this.wasteEntity = data.entity;
+      if (typeof data.label === "string") this.wasteLabel = data.label;
+      if (typeof data.icon === "string") this.wasteIcon = data.icon;
+      if (["relative", "date", "both"].includes(data.dateMode)) this.wasteDateMode = data.dateMode;
+    } catch (error) { console.warn("ControlRoom: smart bar preferences unavailable", error); }
+  }
+
+  private saveSmartSettings(): void {
+    try { localStorage.setItem("controlroom-smartbar-v1", JSON.stringify({
+      weather: this.smartShowWeather, clock: this.smartShowClock, waste: this.smartShowWaste,
+      source: this.wasteSource, entity: this.wasteEntity, label: this.wasteLabel,
+      icon: this.wasteIcon, dateMode: this.wasteDateMode
+    })); } catch (error) { console.warn("ControlRoom: smart bar preferences could not be saved", error); }
+  }
 
   private restoreWelcome(): void {
     try {
@@ -471,6 +501,7 @@ export class ControlRoomDashboard extends LitElement {
     super.connectedCallback();
     this.restorePreferences();
     this.restoreWelcome();
+    this.restoreSmartSettings();
     this.currentTime = new Date();
     this.clockInterval = setInterval(() => {
       this.currentTime = new Date();
@@ -654,52 +685,144 @@ export class ControlRoomDashboard extends LitElement {
     </div>`;
   }
 
+  private getWasteCandidates(): HAEntity[] {
+    const states = Object.values(this.hass?.states ?? {});
+    const calendars = states.filter(e => e.entity_id.startsWith("calendar.") &&
+      /müll|mull|abfall|waste|trash|garbage|recycl|tonne|pickup|collection|entsorg|stadtreinigung/i.test(
+        `${e.entity_id} ${String(e.attributes.friendly_name || "")}`));
+    const sensors = states.filter(e => e.entity_id.startsWith("sensor.") &&
+      /müll|mull|abfall|waste|trash|garbage|recycl|tonne|pickup|collection|entsorg|stadtreinigung|biomüll|restmüll|papier/i.test(
+        `${e.entity_id} ${String(e.attributes.friendly_name || "")}`));
+    return [...calendars, ...sensors].sort((a,b) => a.entity_id.localeCompare(b.entity_id));
+  }
+
+  private getWasteEntity(): HAEntity | undefined {
+    const states = this.hass?.states ?? {};
+    if (this.wasteEntity) {
+      const chosen = states[this.wasteEntity];
+      if (chosen && (this.wasteSource === "auto" || chosen.entity_id.startsWith(`${this.wasteSource}.`))) return chosen;
+      return undefined; // Never silently replace a manually selected entity.
+    }
+    const candidates = this.getWasteCandidates().filter(e =>
+      this.wasteSource === "auto" || e.entity_id.startsWith(`${this.wasteSource}.`));
+    // Prefer a calendar with a next event; otherwise a sensor with a usable state.
+    return candidates.find(e => e.entity_id.startsWith("calendar.") && typeof e.attributes.start_time === "string") ||
+      candidates.find(e => e.entity_id.startsWith("sensor.") && !["unknown", "unavailable", ""].includes(e.state)) ||
+      candidates[0];
+  }
+
+  private getWasteInfo(): {title: string; when: string} | undefined {
+    const entity = this.getWasteEntity();
+    if (!entity || ["unknown", "unavailable"].includes(entity.state)) return undefined;
+    const attrs = entity.attributes;
+    const name = String(attrs.friendly_name || entity.entity_id.split(".")[1].replace(/_/g, " "));
+    const message = attrs.message || attrs.next_collection_type || attrs.waste_type || attrs.type;
+    const title = this.wasteLabel.trim() || (typeof message === "string" && message.trim() ? message : name);
+    const dateRaw = attrs.start_time || attrs.next_date || attrs.next_collection || attrs.date ||
+      attrs.collection_date || attrs.next_pickup || attrs.next_collection_date;
+    const state = entity.state;
+    const dateCandidate = typeof dateRaw === "string" ? dateRaw :
+      /^\d{4}-\d{2}-\d{2}/.test(state) ? state : "";
+    let date: Date | undefined;
+    if (dateCandidate) {
+      const parsed = new Date(dateCandidate);
+      if (!Number.isNaN(parsed.getTime())) date = parsed;
+    }
+    const daysAttr = attrs.days_until_collection ?? attrs.days_until ?? attrs.days_remaining;
+    let days: number | undefined;
+    if (date) {
+      const now = this.currentTime;
+      const a = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+      const b = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+      days = Math.round((b - a) / 86400000);
+    } else if (typeof daysAttr === "number" && Number.isFinite(daysAttr)) days = daysAttr;
+    else if (typeof daysAttr === "string" && /^\d+$/.test(daysAttr)) days = Number(daysAttr);
+    else if (entity.entity_id.startsWith("sensor.") && /^\d+$/.test(state)) days = Number(state);
+    const lang = this.getLanguage();
+    const relative = days === undefined ? "" : days === 0 ? (lang === "de" ? "Heute" : lang === "pt" ? "Hoje" : "Today") :
+      days === 1 ? (lang === "de" ? "Morgen" : lang === "pt" ? "Amanhã" : "Tomorrow") :
+      (lang === "de" ? `In ${days} Tagen` : lang === "pt" ? `Em ${days} dias` : `In ${days} days`);
+    const absolute = date ? new Intl.DateTimeFormat(lang, {day:"2-digit", month:"short"}).format(date) : "";
+    const when = this.wasteDateMode === "date" ? (absolute || relative) :
+      this.wasteDateMode === "both" ? [relative, absolute].filter(Boolean).join(" · ") : (relative || absolute);
+    const fallback = entity.entity_id.startsWith("sensor.") && !/^\d{4}-\d{2}-\d{2}/.test(state) && !/^\d+$/.test(state) ? state : "";
+    if (!when && !fallback) return undefined; // Hide unconfigured / empty data.
+    return {title, when: when || fallback};
+  }
+
   private renderWelcomeSettings() {
-    return html`<section class="welcome-settings">
-      <div class="eyebrow">Startseite</div><h2>Begrüßung & Personen</h2>
-      <p>Personalisierung dieses Browsers / Displays</p>
-      <label class="welcome-setting-row"><span>Begrüßungsmodus</span>
-        <select .value=${this.welcomeMode} @change=${(e: Event) => {this.welcomeMode = (e.target as HTMLSelectElement).value as "automatic" | "shared"; this.saveWelcome();}}>
-          <option value="automatic">Automatisch · angemeldete Person</option>
-          <option value="shared">Gemeinsam · iSG Display</option>
-        </select></label>
-      ${([
-        ["welcomeShowGreeting", "Begrüßung anzeigen"],
-        ["welcomeShowEyebrow", "Bereichstitel anzeigen"],
-        ["welcomeShowSubtitle", "Untertitel anzeigen"],
-        ["welcomeShowPeople", "Personen und Standorte anzeigen"]
-      ] as const).map(([key, label]) => html`<label class="welcome-setting-row"><span>${label}</span>
-        <input type="checkbox" .checked=${this[key]} @change=${(e: Event) => {(this as any)[key] = (e.target as HTMLInputElement).checked; this.saveWelcome();}} /></label>`)}
-      <label class="welcome-setting-text">Bereichstitel
-        <input type="text" .value=${this.welcomeEyebrow || this.t("homeLabel")} @change=${(e: Event) => {this.welcomeEyebrow = (e.target as HTMLInputElement).value; this.saveWelcome();}} /></label>
-      <label class="welcome-setting-text">Untertitel
-        <input type="text" .value=${this.welcomeSubtitle || this.t("subtitle")} @change=${(e: Event) => {this.welcomeSubtitle = (e.target as HTMLInputElement).value; this.saveWelcome();}} /></label>
-    </section>`;
+    const candidates = this.getWasteCandidates().filter(e =>
+      this.wasteSource === "auto" || e.entity_id.startsWith(`${this.wasteSource}.`));
+    const wasteInfo = this.getWasteInfo();
+    return html`<div class="settings-stack">
+      <section class="welcome-settings">
+        <div class="eyebrow">Startseite</div><h2>Begrüßung & Personen</h2>
+        <p>Personalisierung dieses Browsers / Displays</p>
+        <label class="welcome-setting-row"><span>Begrüßungsmodus</span>
+          <select .value=${this.welcomeMode} @change=${(e: Event) => {this.welcomeMode = (e.target as HTMLSelectElement).value as "automatic" | "shared"; this.saveWelcome();}}>
+            <option value="automatic">Automatisch · angemeldete Person</option>
+            <option value="shared">Gemeinsam · iSG Display</option>
+          </select></label>
+        ${([
+          ["welcomeShowGreeting", "Begrüßung anzeigen"],
+          ["welcomeShowEyebrow", "Bereichstitel anzeigen"],
+          ["welcomeShowSubtitle", "Untertitel anzeigen"],
+          ["welcomeShowPeople", "Personen und Standorte anzeigen"]
+        ] as const).map(([key, label]) => html`<label class="welcome-setting-row"><span>${label}</span>
+          <input type="checkbox" .checked=${this[key]} @change=${(e: Event) => {(this as any)[key] = (e.target as HTMLInputElement).checked; this.saveWelcome();}} /></label>`)}
+        <label class="welcome-setting-text">Bereichstitel
+          <input type="text" .value=${this.welcomeEyebrow || this.t("homeLabel")} @change=${(e: Event) => {this.welcomeEyebrow = (e.target as HTMLInputElement).value; this.saveWelcome();}} /></label>
+        <label class="welcome-setting-text">Untertitel
+          <input type="text" .value=${this.welcomeSubtitle || this.t("subtitle")} @change=${(e: Event) => {this.welcomeSubtitle = (e.target as HTMLInputElement).value; this.saveWelcome();}} /></label>
+      </section>
+      <section class="welcome-settings">
+        <div class="eyebrow">Startseite</div><h2>Smart Glass Bar</h2>
+        <p>Wetter, Uhr und Müllabfuhr · pro Browser / Display gespeichert</p>
+        ${([
+          ["smartShowWeather", "Wetter anzeigen"],
+          ["smartShowClock", "Uhr & Datum anzeigen"],
+          ["smartShowWaste", "Müllabfuhr anzeigen"]
+        ] as const).map(([key, label]) => html`<label class="welcome-setting-row"><span>${label}</span>
+          <input type="checkbox" .checked=${this[key]} @change=${(e: Event) => {(this as any)[key] = (e.target as HTMLInputElement).checked; this.saveSmartSettings();}} /></label>`)}
+        <div class="settings-subheading">Müllabfuhr · Datenquelle</div>
+        <label class="welcome-setting-text">Quelle
+          <select .value=${this.wasteSource} @change=${(e: Event) => {this.wasteSource = (e.target as HTMLSelectElement).value as "auto" | "calendar" | "sensor"; this.wasteEntity = ""; this.saveSmartSettings();}}>
+            <option value="auto">Automatisch erkennen</option>
+            <option value="calendar">Kalender (calendar.*)</option>
+            <option value="sensor">Sensor / HACS (sensor.*)</option>
+          </select></label>
+        <label class="welcome-setting-text">Entität
+          <select .value=${this.wasteEntity} @change=${(e: Event) => {this.wasteEntity = (e.target as HTMLSelectElement).value; this.saveSmartSettings();}}>
+            <option value="">Automatisch auswählen</option>
+            ${candidates.map(entity => html`<option value=${entity.entity_id}>${String(entity.attributes.friendly_name || entity.entity_id)} · ${entity.entity_id}</option>`)}
+          </select></label>
+        ${!candidates.length ? html`<p class="settings-note">Keine passende Entität gefunden. Prüfe, ob die Integration einen Kalender oder Sensor bereitstellt.</p>` : nothing}
+        <label class="welcome-setting-text">Eigener Name (optional)
+          <input type="text" placeholder="z. B. Biomüll" .value=${this.wasteLabel} @input=${(e: Event) => {this.wasteLabel = (e.target as HTMLInputElement).value; this.saveSmartSettings();}} /></label>
+        <label class="welcome-setting-text">Symbol (MDI)
+          <input type="text" placeholder="mdi:trash-can-outline" .value=${this.wasteIcon} @change=${(e: Event) => {this.wasteIcon = (e.target as HTMLInputElement).value || "mdi:trash-can-outline"; this.saveSmartSettings();}} /></label>
+        <label class="welcome-setting-text">Datumsanzeige
+          <select .value=${this.wasteDateMode} @change=${(e: Event) => {this.wasteDateMode = (e.target as HTMLSelectElement).value as "relative" | "date" | "both"; this.saveSmartSettings();}}>
+            <option value="relative">Relativ · Heute / Morgen / in X Tagen</option>
+            <option value="date">Datum · 28. Okt.</option>
+            <option value="both">Beides · Morgen · 28. Okt.</option>
+          </select></label>
+        <p class="settings-note">${wasteInfo ? `Vorschau: ${wasteInfo.title} · ${wasteInfo.when}` : "Noch keine gültigen Abholdaten. Der Eintrag bleibt in der Smart Bar verborgen."}</p>
+      </section>
+    </div>`;
   }
 
   private renderSmartBar() {
-    const calendar = this.hass?.states["calendar.controlroom_mull_stadtreinigung_hamburg"];
-    const eventName = typeof calendar?.attributes.message === "string" ? calendar.attributes.message : "—";
-    const eventDate = calendar?.attributes.start_time;
-    let eventWhen = "Nächste Abholung";
-    if (typeof eventDate === "string") {
-      const date = new Date(eventDate);
-      if (!Number.isNaN(date.getTime())) {
-        const today = new Date(this.currentTime.getFullYear(), this.currentTime.getMonth(), this.currentTime.getDate()).getTime();
-        const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-        const days = Math.round((eventDay - today) / 86400000);
-        eventWhen = days === 0 ? "Heute" : days === 1 ? "Morgen" : new Intl.DateTimeFormat("de", {day:"2-digit",month:"short"}).format(date);
-      }
-    }
-    return html`<div class="smart-bar">
-      ${this.renderWeather()}
-      <div class="smart-divider"></div>
-      <div class="smart-segment">${this.renderIcon("mdi:clock-outline")}
-        <div><strong>${this.getTime()}</strong><small>${this.getDate()}</small></div></div>
-      <div class="smart-divider"></div>
-      <div class="smart-segment smart-waste">${this.renderIcon("mdi:trash-can-outline")}
-        <div><strong>${eventName}</strong><small>${eventWhen}</small></div></div>
-    </div>`;
+    const weather = this.smartShowWeather ? this.getWeather() : undefined;
+    const waste = this.smartShowWaste ? this.getWasteInfo() : undefined;
+    const parts = [
+      weather ? html`<div class="smart-part">${this.renderWeather()}</div>` : nothing,
+      this.smartShowClock ? html`<div class="smart-part"><div class="smart-segment">${this.renderIcon("mdi:clock-outline")}
+        <div><strong>${this.getTime()}</strong><small>${this.getDate()}</small></div></div></div>` : nothing,
+      waste ? html`<div class="smart-part"><div class="smart-segment smart-waste">${this.renderIcon(this.wasteIcon.startsWith("mdi:") ? this.wasteIcon : "mdi:trash-can-outline")}
+        <div><strong title=${waste.title}>${waste.title}</strong><small>${waste.when}</small></div></div></div>` : nothing
+    ].filter(part => part !== nothing);
+    return parts.length ? html`<div class="smart-bar">${parts.map((part,i) => html`${i ? html`<div class="smart-divider"></div>` : nothing}${part}`)}</div>` : nothing;
   }
 
   private getAllLightEntities(): HAEntity[] {
@@ -1846,6 +1969,13 @@ export class ControlRoomDashboard extends LitElement {
     @media (prefers-reduced-motion: reduce) {
       .weather-icon { animation: none; }
     }
+    .settings-stack {display:grid;gap:18px;max-width:740px}
+    .settings-stack .welcome-settings {max-width:none}
+    .settings-subheading {font-size:13px;font-weight:700;color:#e6d5f4;margin-top:25px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)}
+    .welcome-setting-text select {width:100%;padding:10px;border:1px solid rgba(211,174,239,.2);border-radius:10px;background:#30263c;color:#fff}
+    .welcome-setting-text input {width:100%}
+    .settings-note {margin:12px 0 0!important;color:#bcaed0!important;font-size:12px!important}
+    .smart-part {display:flex;align-items:center;min-width:0}
     /* Compact information bar and personalized greeting */
     .smart-bar {display:flex;align-items:center;gap:14px;min-height:62px;padding:8px 15px;border:1px solid rgba(215,175,239,.13);border-radius:18px;background:rgba(152,113,193,.095);backdrop-filter:blur(18px)}
     .smart-bar .weather {min-width:0;min-height:0;padding:0;border:0;background:none;gap:8px;backdrop-filter:none}
@@ -1868,7 +1998,44 @@ export class ControlRoomDashboard extends LitElement {
     .welcome-setting-row input {accent-color:#b58bd7}
     .welcome-setting-text {display:flex;flex-direction:column;gap:8px;margin-top:17px;color:#c8b7d6;font-size:12px}
     @media(max-width:1100px){.topbar{align-items:flex-start;flex-wrap:wrap}.topbar-right{margin-left:auto}.smart-bar{gap:10px}}
-    @media(max-width:650px){.smart-bar{gap:8px;padding:8px}.smart-waste{display:none}.smart-bar .smart-divider:last-of-type{display:none}.smart-bar .weather-condition{display:none}.hero-content{align-items:flex-start}.welcome-title h1{font-size:clamp(24px,6vw,36px)}}
+    @media(max-width:650px){.smart-bar{gap:8px;padding:8px}.smart-bar{flex-wrap:wrap}.smart-waste strong{max-width:105px}.smart-bar .weather-condition{display:none}.hero-content{align-items:flex-start}.welcome-title h1{font-size:clamp(24px,6vw,36px)}}
+
+    /* Mobile layout: keep the page title and Smart Glass Bar in separate rows. */
+    @media (max-width: 650px) {
+      .main { width:100%; min-width:0; padding:18px 16px 32px; }
+      .topbar { display:flex; flex-direction:column; align-items:stretch; gap:14px; margin-bottom:32px; }
+      .topbar-left { width:100%; min-width:0; justify-content:flex-start; }
+      .page-heading { font-size:15px; }
+      .topbar-right { display:block; width:100%; min-width:0; margin:0; }
+      .smart-bar { width:100%; max-width:100%; min-width:0; min-height:58px; padding:10px 12px; display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px 8px; }
+      .smart-part { min-width:0; flex:1 1 auto; }
+      .smart-bar .weather { gap:7px; }
+      .smart-bar .weather-temp,.smart-segment strong { font-size:13px; }
+      .smart-bar .weather-condition,.smart-segment small { font-size:10px; }
+      .smart-divider { height:26px; }
+      .smart-segment { gap:6px; }
+      .smart-segment>ha-icon { --mdc-icon-size:19px; }
+      .smart-waste strong { max-width:155px; }
+      .hero { min-width:0; }
+      .hero-content { display:flex; flex-direction:column; align-items:flex-start; gap:18px; }
+      .hero-message { width:100%; min-width:0; }
+      .welcome-title { display:flex; align-items:center; gap:11px; min-width:0; }
+      .welcome-title h1 { min-width:0; overflow-wrap:anywhere; font-size:clamp(25px,6.5vw,34px); line-height:1.17; letter-spacing:-.045em; }
+      .pill-avatar.avatar-large { flex:0 0 43px; width:43px; height:43px; }
+      .hero-message p { font-size:13px; line-height:1.55; }
+      .people-pills { max-width:100%; }
+      .overview-grid { margin-top:28px; gap:13px; }
+      .overview-card { min-width:0; }
+      .welcome-settings { padding:17px; }
+      .welcome-setting-row { flex-wrap:wrap; gap:10px; }
+    }
+    @media (max-width: 390px) {
+      .main { padding-left:12px; padding-right:12px; }
+      .smart-bar { justify-content:flex-start; }
+      .smart-part { flex:0 1 auto; }
+      .smart-divider { display:none; }
+      .welcome-title h1 { font-size:24px; }
+    }
 
   `;
 
