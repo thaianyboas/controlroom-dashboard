@@ -1539,13 +1539,31 @@ export class ControlRoomDashboard extends LitElement {
       }
       return defaultValue;
     };
-    const accent=pick(fallback.accent,"accent-color","primary-color","state-icon-color");
+    const accent=pick(fallback.accent,"primary-color","accent-color","state-icon-color");
     const bg=pick(fallback.bg,"lovelace-background","primary-background-color");
     const surface=pick(fallback.surface,"ha-card-background","card-background-color","secondary-background-color");
     const fg=pick(fallback.text,"primary-text-color");
     const muted=pick(fallback.muted,"secondary-text-color","disabled-text-color");
     const light=this.crIsLightColor(bg) || (ha && !/^#[0-9a-f]{3,8}$/i.test(bg) && !dark);
-    return {accent,bg,surface,fg,muted,light,ha,resolve,pick};
+    // Some HA themes declare light text over a light background (or the inverse)
+    // because their text variables are intended for a different surface.
+    const luminance=(color:string):number|null=>{
+      const v=color.trim(); const hex=v.match(/^#([\da-f]{3}|[\da-f]{6}|[\da-f]{8})$/i);
+      let rgb:number[]|null=null;
+      if(hex){let h=hex[1];if(h.length===3)h=h.split("").map(c=>c+c).join("");rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));}
+      else {const m=v.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);if(m)rgb=[+m[1],+m[2],+m[3]];}
+      if(!rgb)return null;
+      const c=rgb.map(x=>{const n=x/255;return n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4;});
+      return c[0]*0.2126+c[1]*0.7152+c[2]*0.0722;
+    };
+    const surfaceLum=luminance(surface)??luminance(bg);
+    const textLum=luminance(fg);
+    const ratio=surfaceLum===null||textLum===null?99:(Math.max(surfaceLum,textLum)+0.05)/(Math.min(surfaceLum,textLum)+0.05);
+    const safeFg=ratio<4.5?(light?"#17202b":"#f7f8fc"):fg;
+    const mutedLum=luminance(muted);
+    const mutedRatio=surfaceLum===null||mutedLum===null?99:(Math.max(surfaceLum,mutedLum)+0.05)/(Math.min(surfaceLum,mutedLum)+0.05);
+    const safeMuted=mutedRatio<3?(light?"#485363":"#bfc8d4"):muted;
+    return {accent,bg,surface,fg:safeFg,muted:safeMuted,light,ha,resolve,pick};
   }
   private crThemeVars(){
     const t=this.crResolvedTheme();
@@ -1574,6 +1592,8 @@ export class ControlRoomDashboard extends LitElement {
       css["--primary-color"]=t.accent;css["--accent-color"]=t.accent;
       css["--primary-background-color"]=t.bg;css["--primary-text-color"]=t.fg;
       css["--secondary-text-color"]=t.muted;css["--card-background-color"]=t.surface;
+      css["--paper-item-icon-color"]=t.accent;css["--state-icon-color"]=t.accent;
+      css["--mdc-theme-primary"]=t.accent;css["--ha-card-background"]=t.surface;
     }
     return Object.entries(css).map(([key,value])=>`${key}:${value}`).join(";")+";";
   }
@@ -2847,6 +2867,29 @@ export class ControlRoomDashboard extends LitElement {
     .dashboard .settings-note,.dashboard .overview-card small,.dashboard .studio-mood-subtitle {color:var(--cr-muted)!important}
     .dashboard .cr-room-detail-art {position:relative!important;overflow:hidden!important}
     .dashboard .cr-room-detail-art img {max-width:100%!important;max-height:100%!important}
+    /* V11: readable text across native HA theme variants; icons follow the chosen theme. */
+    .dashboard .settings-center,.dashboard .settings-center h1,.dashboard .settings-center h2,
+    .dashboard .settings-center h3,.dashboard .settings-center p,.dashboard .settings-center label,
+    .dashboard .settings-center span,.dashboard .settings-center strong,
+    .dashboard .cr-theme-studio h2,.dashboard .cr-theme-studio h3,
+    .dashboard .cr-theme-studio .welcome-setting-row,
+    .dashboard .cr-theme-studio .settings-note,
+    .dashboard .cr-theme-studio .cr-theme-style-list strong,
+    .dashboard .cr-theme-studio .cr-theme-style-list small,
+    .dashboard .cr-theme-studio .cr-theme-choice strong,
+    .dashboard .cr-theme-studio .cr-room-visual-head p,
+    .dashboard .cr-theme-studio .cr-room-kicker {color:var(--cr-text)!important}
+    .dashboard .cr-theme-studio select,.dashboard .cr-theme-studio option,
+    .dashboard .cr-theme-studio input {color:var(--cr-text)!important;background:var(--cr-surface)!important;border-color:color-mix(in srgb,var(--cr-text) 20%,transparent)!important}
+    .dashboard .cr-theme-studio .cr-theme-choice,
+    .dashboard .cr-theme-studio .cr-theme-style-list button {color:var(--cr-text)!important}
+    .dashboard .cr-theme-studio .cr-theme-choice .cr-theme-preview {color:inherit}
+    .dashboard .sidebar ha-icon,.dashboard .main ha-icon,
+    .dashboard .sidebar svg,.dashboard .main svg {color:var(--cr-accent)!important}
+    .dashboard .settings-back,.dashboard .cr-theme-actions button:first-child {color:var(--cr-text)!important}
+    .dashboard .cr-theme-actions button:last-child {color:var(--cr-bg)!important}
+    .dashboard .settings-center,.dashboard .cr-theme-studio {background:transparent!important}
+
 
 `;
 
