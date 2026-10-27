@@ -1,0 +1,41 @@
+
+name: Build ControlRoom Dashboard
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Dashboard
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build ControlRoom
+        run: npm run build
+
+      - name: Commit compiled dashboard
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/controlroom-dashboard.js
+          if ! git diff --cached --quiet; then
+            git commit -m "build: update compiled dashboard [skip ci]"
+            git push
+          fi
