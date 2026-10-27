@@ -363,7 +363,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.activePage = "home";
         this.mobileMenuOpen = false;
         this.currentTime = new Date();
-        this.selectedLightId = "";
+        this.openLightColorId = "";
+        this.showInlineBrightness = true;
         this.selectedRoom = "";
         this.lightsTab = "lights";
         this.areaNames = {};
@@ -402,6 +403,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
                 this.excludedLabels = v.excludedLabels.filter((x) => typeof x === "string");
             if (typeof v.onlyUnlabeled === "boolean")
                 this.onlyUnlabeled = v.onlyUnlabeled;
+            if (typeof v.showInlineBrightness === "boolean")
+                this.showInlineBrightness = v.showInlineBrightness;
             if (typeof v.showTypeDescriptions === "boolean")
                 this.showTypeDescriptions = v.showTypeDescriptions;
             if (typeof v.showStatusDescriptions === "boolean")
@@ -415,7 +418,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         try {
             localStorage.setItem("controlroom-lighting-v1", JSON.stringify({
                 groupMode: this.groupMode, hiddenEntities: this.hiddenEntities, shownEntities: this.shownEntities,
-                excludedLabels: this.excludedLabels, onlyUnlabeled: this.onlyUnlabeled,
+                excludedLabels: this.excludedLabels, onlyUnlabeled: this.onlyUnlabeled, showInlineBrightness: this.showInlineBrightness,
                 showTypeDescriptions: this.showTypeDescriptions, showStatusDescriptions: this.showStatusDescriptions
             }));
         }
@@ -690,12 +693,14 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         ${this.labelOptions.map(label => b `<label class="pref-check"><input type="checkbox"
           .checked=${this.excludedLabels.includes(label.label_id)}
           @change=${() => { this.excludedLabels = this.toggleEntry(this.excludedLabels, label.label_id); this.savePreferences(); }} />
-          <span>${label.name}</span><small>${label.label_id}</small><span class="pref-hint">${this.getLanguage() === "de" ? "Ausblenden" : "Ocultar"}</span></label>`)}
+          <span class="pref-label-name" title=${label.name}>${label.name}</span><span class="pref-hint">${this.getLanguage() === "de" ? "Ausblenden" : this.getLanguage() === "pt" ? "Ocultar" : "Hide"}</span></label>`)}
         ${!this.labelOptions.length ? b `<small>${this.registryLoading ? "Labels werden geladen…" : "Keine Labels verfügbar (Registry prüfen)"}</small>` : A}
         <label class="pref-check"><input type="checkbox" .checked=${this.onlyUnlabeled}
-          @change=${() => { this.onlyUnlabeled = !this.onlyUnlabeled; this.savePreferences(); }}/><span>Nur ohne Label / Somente sem label</span></label>
+          @change=${() => { this.onlyUnlabeled = !this.onlyUnlabeled; this.savePreferences(); }}/><span>${this.getLanguage() === "de" ? "Nur ohne Label" : this.getLanguage() === "pt" ? "Somente sem label" : "Only without label"}</span></label>
       </div>
       <div class="pref-title">${this.getLanguage() === "de" ? "Darstellung" : "Aparência"}</div>
+      <div class="pref-list"><label class="pref-check"><input type="checkbox" .checked=${this.showInlineBrightness}
+        @change=${() => { this.showInlineBrightness = !this.showInlineBrightness; this.savePreferences(); }}/><span>${this.getLanguage() === "de" ? "Helligkeit direkt in Lichtkarten" : this.getLanguage() === "pt" ? "Brilho direto nos cartões" : "Brightness inside light cards"}</span></label></div>
       <div class="pref-list">
         <label class="pref-check"><input type="checkbox" .checked=${this.showTypeDescriptions}
           @change=${() => { this.showTypeDescriptions = !this.showTypeDescriptions; this.savePreferences(); }}/><span>Gerätetyp anzeigen</span></label>
@@ -760,6 +765,42 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             await this.hass.callService("light", "turn_on", {
                 entity_id: light.entity_id, brightness_pct: value
             });
+        }
+        catch (error) {
+            console.error(this.t("lightActionError"), error);
+        }
+    }
+    supportsColor(light) {
+        const modes = light.attributes.supported_color_modes;
+        return Array.isArray(modes) && modes.some(m => ["hs", "rgb", "rgbw", "rgbww", "xy"].includes(String(m)));
+    }
+    supportsColorTemperature(light) {
+        const modes = light.attributes.supported_color_modes;
+        return Array.isArray(modes) && modes.includes("color_temp");
+    }
+    getColorHex(light) {
+        const rgb = light.attributes.rgb_color;
+        if (Array.isArray(rgb) && rgb.length >= 3 && rgb.slice(0, 3).every(x => typeof x === "number")) {
+            return `#${rgb.slice(0, 3).map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, "0")).join("")}`;
+        }
+        return "#b38be0";
+    }
+    async setLightColor(light, hex) {
+        if (!this.hass?.callService || !/^#[0-9a-f]{6}$/i.test(hex))
+            return;
+        const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+        try {
+            await this.hass.callService("light", "turn_on", { entity_id: light.entity_id, rgb_color: rgb });
+        }
+        catch (error) {
+            console.error(this.t("lightActionError"), error);
+        }
+    }
+    async setLightTemperature(light, kelvin) {
+        if (!this.hass?.callService)
+            return;
+        try {
+            await this.hass.callService("light", "turn_on", { entity_id: light.entity_id, color_temp_kelvin: kelvin });
         }
         catch (error) {
             console.error(this.t("lightActionError"), error);
@@ -835,7 +876,6 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const available = lights.filter(l => l.state === "on" || l.state === "off");
         const rooms = [...new Set(lights.map(l => this.getLightRoom(l)))].sort((a, b) => a.localeCompare(b, this.getLanguage()));
         const filtered = this.selectedRoom ? lights.filter(l => this.getLightRoom(l) === this.selectedRoom) : lights;
-        const chosen = filtered.find(l => l.entity_id === this.selectedLightId) || filtered[0];
         const avg = on ? lights.filter(l => l.state === "on").reduce((n, l) => n + this.getBrightness(l), 0) / on : 0;
         return b `
       <section class="lighting-studio">
@@ -863,7 +903,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             const roomLights = lights.filter(l => this.getLightRoom(l) === room);
             const roomOn = roomLights.filter(l => l.state === "on").length;
             return b `<button type="button" class="ambient-room ${roomOn ? "illuminated" : ""}"
-              @click=${() => { this.selectedRoom = room; this.selectedLightId = ""; this.lightsTab = "lights"; }}>
+              @click=${() => { this.selectedRoom = room; this.openLightColorId = ""; this.lightsTab = "lights"; }}>
               <span class="ambient-room-glow"></span>
               <span class="ambient-room-icon">${this.renderIcon("mdi:home-lightbulb-outline")}</span>
               <span class="ambient-room-name">${room}</span>
@@ -881,52 +921,67 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
           <div class="room-filters">
             <button class=${!this.selectedRoom ? "active" : ""} @click=${() => this.selectedRoom = ""}>${this.t("allRooms")}</button>
             ${rooms.map(room => b `<button class=${this.selectedRoom === room ? "active" : ""}
-              @click=${() => { this.selectedRoom = room; this.selectedLightId = ""; }}>${room}</button>`)}
+              @click=${() => { this.selectedRoom = room; this.openLightColorId = ""; }}>${room}</button>`)}
           </div>
           <div class="studio-grid">
             ${filtered.map(light => {
             const active = light.state === "on";
-            const selected = chosen?.entity_id === light.entity_id;
             const available = active || light.state === "off";
-            return b `<article class="studio-light ${selected ? "selected" : ""} ${active ? "active" : ""}">
-                <button class="studio-light-select" @click=${() => this.selectedLightId = light.entity_id}>
+            const brightnessEnabled = active && this.supportsBrightness(light) && this.showInlineBrightness;
+            const hasColor = this.supportsColor(light) || this.supportsColorTemperature(light);
+            const colorOpen = active && this.openLightColorId === light.entity_id;
+            const minK = typeof light.attributes.min_color_temp_kelvin === "number" ? light.attributes.min_color_temp_kelvin : 2000;
+            const maxK = typeof light.attributes.max_color_temp_kelvin === "number" ? light.attributes.max_color_temp_kelvin : 6500;
+            return b `<article class="studio-light ${active ? "active" : ""} ${brightnessEnabled ? "with-brightness" : ""}">
+                <div class="studio-light-top">
                   <span class="studio-light-icon">${this.renderIcon(active ? "mdi:lightbulb-on" : "mdi:lightbulb-outline")}</span>
-                  ${this.showStatusDescriptions ? b `<span class="studio-light-state">${available ? this.t(active ? "lightsOn" : "lightsOff") : this.t("lightUnavailable")}</span>` : A}
-                  <span class="studio-light-name">${this.getLightName(light)}</span>
-                  ${this.showTypeDescriptions ? b `<span class="studio-light-room">${this.getGroupMembers(light).length ? `Gruppe · ${this.getGroupMembers(light).length} Lampen` : "Einzellicht"}</span>` : A}
-                  ${active && this.supportsBrightness(light) ? b `<span class="studio-light-level">${this.getBrightness(light)}%</span>` : A}
-                </button>
-                <button type="button" class="studio-toggle ${active ? "on" : ""}"
-                  ?disabled=${!available || !this.hass?.callService}
-                  aria-label=${`${this.t("toggleLight")}: ${this.getLightName(light)}`}
-                  aria-pressed=${active ? "true" : "false"} @click=${() => this.toggleLight(light)}>
-                  ${this.renderIcon(active ? "mdi:check-circle" : "mdi:circle-outline")}
-                </button>
+                  <span class="studio-light-name" title=${this.getLightName(light)}>${this.getLightName(light)}</span>
+                  <button type="button" class="studio-toggle ${active ? "on" : ""}"
+                    ?disabled=${!available || !this.hass?.callService}
+                    aria-label=${`${this.t("toggleLight")}: ${this.getLightName(light)}`}
+                    aria-pressed=${active ? "true" : "false"} @click=${() => { if (active && this.openLightColorId === light.entity_id)
+                this.openLightColorId = ""; void this.toggleLight(light); }}>
+                    ${this.renderIcon(active ? "mdi:check-circle" : "mdi:circle-outline")}
+                  </button>
+                </div>
+                ${this.showStatusDescriptions ? b `<span class="studio-light-state-inline">${available ? this.t(active ? "lightsOn" : "lightsOff") : this.t("lightUnavailable")}</span>` : A}
+                ${this.showTypeDescriptions ? b `<span class="studio-light-room">${this.getGroupMembers(light).length ? `Gruppe · ${this.getGroupMembers(light).length} Lampen` : "Einzellicht"}</span>` : A}
+                ${brightnessEnabled ? b `
+                  <div class="studio-inline-brightness">
+                    <input class="studio-inline-slider" type="range" min="1" max="100"
+                      .value=${String(this.getBrightness(light))}
+                      style=${`--light-level:${this.getBrightness(light)}%`}
+                      aria-label=${`${this.t("brightness")}: ${this.getLightName(light)}`}
+                      ?disabled=${!this.hass?.callService}
+                      @change=${(e) => this.setLightBrightness(light, Number(e.target.value))}/>
+                    <span class="studio-inline-value">${this.getBrightness(light)}%</span>
+                    ${hasColor ? b `<button type="button" class="studio-color-trigger ${colorOpen ? "open" : ""}"
+                      title=${this.getLanguage() === "de" ? "Lichtfarbe" : "Cor da luz"}
+                      aria-label=${this.getLanguage() === "de" ? "Lichtfarbe" : "Cor da luz"}
+                      aria-expanded=${colorOpen ? "true" : "false"}
+                      @click=${() => this.openLightColorId = colorOpen ? "" : light.entity_id}>
+                      ${this.renderIcon("mdi:palette-outline")}</button>` : A}
+                  </div>
+                ` : active && hasColor ? b `<button class="studio-color-trigger studio-color-alone" @click=${() => this.openLightColorId = colorOpen ? "" : light.entity_id}>${this.renderIcon("mdi:palette-outline")}</button>` : A}
+                ${colorOpen ? b `<div class="studio-inline-colors">
+                  ${this.supportsColor(light) ? b `<div class="studio-inline-color-line">
+                    <span>${this.getLanguage() === "de" ? "Farbe" : "Cor"}</span>
+                    <input type="color" class="studio-color-picker" .value=${this.getColorHex(light)}
+                      aria-label=${this.getLanguage() === "de" ? "Lichtfarbe" : "Cor da luz"}
+                      @change=${(e) => this.setLightColor(light, e.target.value)}/>
+                  </div>` : A}
+                  ${this.supportsColorTemperature(light) ? b `<div class="studio-inline-color-line">
+                    <span>${this.getLanguage() === "de" ? "Weißtemperatur" : "Temperatura"}</span>
+                    <input type="range" class="studio-inline-slider" min=${String(minK)} max=${String(maxK)}
+                      .value=${String(typeof light.attributes.color_temp_kelvin === "number" ? light.attributes.color_temp_kelvin : 4000)}
+                      aria-label=${this.getLanguage() === "de" ? "Weißtemperatur" : "Temperatura"}
+                      @change=${(e) => this.setLightTemperature(light, Number(e.target.value))}/>
+                  </div>` : A}
+                </div>` : A}
               </article>`;
         })}
           </div>
-          ${chosen ? b `
-            <div class="studio-detail">
-              <div class="studio-detail-head">
-                <div><div class="studio-kicker">${this.t("lightDetails")}</div>
-                  <h2>${this.getLightName(chosen)}</h2>
-                  <span>${this.getLightRoom(chosen)}</span></div>
-                <button class="studio-toggle ${chosen.state === "on" ? "on" : ""}"
-                  ?disabled=${(chosen.state !== "on" && chosen.state !== "off") || !this.hass?.callService}
-                  @click=${() => this.toggleLight(chosen)}
-                  aria-label=${this.t("toggleLight")}>
-                  ${this.renderIcon(chosen.state === "on" ? "mdi:check-circle" : "mdi:circle-outline")}
-                </button>
-              </div>
-              ${this.supportsBrightness(chosen) ? b `
-                <div class="brightness-label"><span>${this.t("brightness")}</span><strong>${this.getBrightness(chosen)}%</strong></div>
-                <input class="brightness-slider" type="range" min="1" max="100"
-                  .value=${String(this.getBrightness(chosen))}
-                  ?disabled=${!this.hass?.callService}
-                  @change=${(e) => this.setLightBrightness(chosen, Number(e.target.value))}/>
-              ` : A}
-            </div>
-          ` : b `<div class="studio-empty">${this.t("noLights")}</div>`}
+          ${!filtered.length ? b `<div class="studio-empty">${this.t("noLights")}</div>` : A}
         `}
       </section>
     `;
@@ -1522,8 +1577,8 @@ ControlRoomDashboard.styles = i$3 `
     .pref-list {display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:7px}
     .pref-check {display:flex;align-items:center;gap:9px;min-width:0;padding:9px 11px;border:1px solid rgba(255,255,255,.06);border-radius:11px;background:rgba(255,255,255,.025);font-size:12px;color:#e7deee;cursor:pointer}
     .pref-check input {accent-color:#ad83cb}
-    .pref-check small {color:#8f829c;overflow:hidden;text-overflow:ellipsis}
-    .pref-hint {margin-left:auto;color:#a899b5;font-size:10px}
+    .pref-label-name {min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .pref-check input {flex:none} .pref-check .pref-hint {flex:none;white-space:nowrap;margin-left:auto}
+    .pref-hint {color:#a899b5;font-size:10px}
     .pref-entities {display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:7px;max-height:270px;overflow-y:auto}
     .pref-entity {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border:1px solid rgba(255,255,255,.06);border-radius:11px;background:rgba(255,255,255,.025)}
     .pref-entity-name {display:flex;align-items:center;gap:8px;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1582,6 +1637,13 @@ ControlRoomDashboard.styles = i$3 `
     .studio-detail-head h2 { margin:6px 0; font-size:20px; }
     .studio-detail-head span { font-size:12px; color:#b7a8c5; }
     .studio-detail .studio-toggle { top:20px; bottom:auto; }
+    .studio-color-row {display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:20px;padding:12px 14px;border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(255,255,255,.035)}
+    .studio-color-row strong {display:block;font-size:12px;font-weight:600}
+    .studio-color-row small {display:block;margin-top:4px;color:#a99eb6;font-size:11px}
+    .studio-color-picker {width:45px;height:37px;padding:3px;border:1px solid rgba(255,255,255,.2);border-radius:11px;background:rgba(255,255,255,.06);cursor:pointer}
+    .studio-temp-range {display:flex;align-items:center;gap:12px;color:#d5b3e9}
+    .studio-temp-range ha-icon {--mdc-icon-size:18px}
+    .studio-temp-range input {flex:1;min-width:0}
     .brightness-label { display:flex; justify-content:space-between; margin-top:22px; margin-bottom:12px; font-size:13px; }
     .brightness-slider { width:100%; accent-color:#c7a2e4; cursor:pointer; }
     .studio-empty { display:flex; align-items:center; gap:12px; padding:25px; color:#b7a8c5; border:1px solid rgba(255,255,255,.08); border-radius:18px; }
@@ -1707,6 +1769,28 @@ ControlRoomDashboard.styles = i$3 `
       .clock-date { font-size: 9px; }
     }
 
+    /* Premium Compact V3: inline light controls, no duplicated detail panel */
+    .studio-grid { gap:9px; align-items:start; }
+    .studio-light { min-height:0; padding:11px 12px; border-radius:15px; transition:border-color 180ms,background 180ms; }
+    .studio-light.active { border-color:rgba(205,163,235,.28); background:rgba(159,112,192,.09); }
+    .studio-light-top { display:flex;align-items:center;gap:9px;min-height:30px; }
+    .studio-light-icon { width:29px;height:29px;flex:none; }
+    .studio-light-name { margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px; }
+    .studio-light .studio-toggle { position:static;flex:none;display:grid;place-items:center;padding:3px; }
+    .studio-light-state-inline,.studio-light-room { display:block;margin:4px 0 0 38px;color:#a99eb6;font-size:10px; }
+    .studio-inline-brightness { display:flex;align-items:center;gap:9px;margin:9px 0 0 38px;min-width:0; }
+    .studio-inline-slider { flex:1;min-width:0;width:100%;height:4px;margin:0;accent-color:#c8a0e6;cursor:pointer; }
+    .studio-inline-value { min-width:34px;text-align:right;font-size:10px;color:#c8b6d7;font-variant-numeric:tabular-nums; }
+    .studio-color-trigger { display:grid;place-items:center;flex:none;width:26px;height:26px;padding:2px;border:1px solid rgba(215,175,239,.2);border-radius:9px;background:rgba(255,255,255,.045);color:#bda0d2;cursor:pointer; }
+    .studio-color-trigger ha-icon { --mdc-icon-size:17px; }
+    .studio-color-trigger.open { background:rgba(171,122,206,.25);border-color:rgba(215,175,239,.45); }
+    .studio-color-alone { margin:7px 0 0 38px; }
+    .studio-inline-colors { margin:10px 0 0 38px;padding-top:9px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:9px; }
+    .studio-inline-color-line { display:flex;align-items:center;justify-content:space-between;gap:12px;color:#bfaed0;font-size:11px; }
+    .studio-inline-color-line .studio-inline-slider { max-width:65%; }
+    .studio-inline-color-line .studio-color-picker { width:35px;height:29px; }
+    @media (max-width:600px) { .studio-grid { grid-template-columns:1fr; } }
+
     @media (prefers-reduced-motion: reduce) {
       .weather-icon { animation: none; }
     }
@@ -1728,7 +1812,10 @@ __decorate([
 ], ControlRoomDashboard.prototype, "currentTime", void 0);
 __decorate([
     r()
-], ControlRoomDashboard.prototype, "selectedLightId", void 0);
+], ControlRoomDashboard.prototype, "openLightColorId", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "showInlineBrightness", void 0);
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "selectedRoom", void 0);
