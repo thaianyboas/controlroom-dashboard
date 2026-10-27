@@ -432,47 +432,36 @@ export class ControlRoomDashboard extends LitElement {
     }
   }
 
-  private renderPeopleCard() {
+  private renderPeoplePills() {
     const people = this.getPeople();
+    if (!people.length) return nothing;
+
     return html`
-      <article class="overview-card people-card">
-        <div class="people-card-heading">
-          <div class="card-icon">${this.renderIcon("mdi:account-group-outline")}</div>
-          <span class="people-count">${people.length}</span>
-        </div>
-        <div class="card-title">${this.t("people")}</div>
-        ${people.length ? html`
-          <div class="people-list">
-            ${people.map((person) => {
-              const picture = person.attributes.entity_picture;
-              const hasPicture = typeof picture === "string" &&
-                (picture.startsWith("/") || picture.startsWith("https://") ||
-                 picture.startsWith("http://"));
-              const isHome = person.state === "home";
-              return html`
-                <div class="person-row">
-                  <div class="person-avatar">
-                    ${hasPicture
-                      ? html`<img src=${picture} alt=${this.getPersonName(person)} loading="lazy" />`
-                      : html`<span>${this.getPersonName(person).charAt(0).toUpperCase()}</span>`}
-                    <span class="person-presence ${isHome ? "is-home" : ""}"></span>
-                  </div>
-                  <div class="person-info">
-                    <div class="person-name">${this.getPersonName(person)}</div>
-                    <div class="person-location">${this.renderIcon(isHome
-                      ? "mdi:home-outline"
-                      : person.state === "not_home"
-                        ? "mdi:map-marker-off-outline"
-                        : "mdi:map-marker-outline")}
-                      <span>${this.getPersonLocation(person)}</span>
-                    </div>
-                  </div>
-                </div>
-              `;
-            })}
-          </div>
-        ` : html`<div class="card-subtitle">${this.t("peopleEmpty")}</div>`}
-      </article>
+      <div class="people-pills" aria-label=${this.t("people")}>
+        ${people.map((person) => {
+          const picture = person.attributes.entity_picture;
+          const hasPicture = typeof picture === "string" &&
+            (picture.startsWith("/") || picture.startsWith("https://") ||
+             picture.startsWith("http://"));
+          const isHome = person.state === "home";
+          const name = this.getPersonName(person);
+          return html`
+            <div class="person-pill" title=${`${name} · ${this.getPersonLocation(person)}`}>
+              <div class="pill-avatar">
+                ${hasPicture
+                  ? html`<img src=${picture} alt=${name} loading="lazy" />`
+                  : html`<span>${name.charAt(0).toUpperCase()}</span>`}
+              </div>
+              <div class="pill-details">
+                <span class="pill-name">${name}</span>
+                <span class="pill-location ${isHome ? "at-home" : ""}">
+                  ${this.getPersonLocation(person)}
+                </span>
+              </div>
+            </div>
+          `;
+        })}
+      </div>
     `;
   }
 
@@ -542,16 +531,20 @@ export class ControlRoomDashboard extends LitElement {
     return html`
       <section class="hero">
         <div class="eyebrow">${this.t("homeLabel")}</div>
-        <h1>
-          ${this.getGreeting()},
-          ${this.hass?.user?.name || "ControlRoom"}
-          <span class="wave">👋</span>
-        </h1>
-        <p>${this.t("subtitle")}</p>
+        <div class="hero-content">
+          <div class="hero-message">
+            <h1>
+              ${this.getGreeting()},
+              ${this.hass?.user?.name || "ControlRoom"}
+              <span class="wave">👋</span>
+            </h1>
+            <p>${this.t("subtitle")}</p>
+          </div>
+          ${this.renderPeoplePills()}
+        </div>
       </section>
 
       <section class="overview-grid">
-        ${this.renderPeopleCard()}
         ${cards.map(
           (card) => html`
             <article class="overview-card">
@@ -941,89 +934,56 @@ export class ControlRoomDashboard extends LitElement {
     }
 
 
-    .people-card {
-      justify-content: flex-start;
-      gap: 10px;
-    }
-    .people-card-heading {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .people-count {
-      border: 1px solid rgba(195, 162, 227, 0.24);
-      background: rgba(164, 117, 203, 0.15);
-      color: #dfc9f3;
-      padding: 3px 9px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .people-list {
-      display: flex;
-      flex-direction: column;
-      gap: 11px;
-      margin-top: 5px;
-    }
-    .person-row {
+    .hero-content {
       display: flex;
       align-items: center;
-      gap: 11px;
+      flex-wrap: wrap;
+      gap: 20px 30px;
+    }
+    .hero-message { min-width: 0; }
+    .hero-message h1 { margin-bottom: 10px; }
+    .hero-message p { margin: 0; }
+    .people-pills {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 9px;
       min-width: 0;
     }
-    .person-avatar {
-      position: relative;
+    .person-pill {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      max-width: 220px;
+      padding: 5px 13px 5px 5px;
+      border: 1px solid rgba(203, 169, 228, 0.17);
+      border-radius: 999px;
+      background: linear-gradient(120deg, rgba(139, 103, 171, 0.17), rgba(255,255,255,0.035));
+      box-shadow: inset 0 1px rgba(255,255,255,0.04);
+    }
+    .pill-avatar {
       display: grid;
       place-items: center;
-      flex: 0 0 42px;
-      width: 42px;
-      height: 42px;
+      flex: 0 0 35px;
+      width: 35px;
+      height: 35px;
       border-radius: 50%;
+      overflow: hidden;
       background: #6d557e;
       color: #fff;
       font-weight: 700;
     }
-    .person-avatar img {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 50%;
-    }
-    .person-presence {
-      position: absolute;
-      right: -1px;
-      bottom: -1px;
-      width: 12px;
-      height: 12px;
-      border: 2px solid #24202e;
-      border-radius: 50%;
-      background: #8c8696;
-    }
-    .person-presence.is-home { background: #48d9a4; }
-    .person-info { min-width: 0; }
-    .person-name {
-      font-size: 13px;
-      font-weight: 650;
+    .pill-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .pill-details { display: flex; flex-direction: column; min-width: 0; }
+    .pill-name, .pill-location {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .person-location {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      margin-top: 4px;
-      color: #b8aec7;
-      font-size: 11px;
-      min-width: 0;
-    }
-    .person-location ha-icon { --mdc-icon-size: 14px; }
-    .person-location span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+    .pill-name { font-size: 12px; font-weight: 650; }
+    .pill-location { color: #bcaed0; font-size: 11px; font-weight: 600; }
+    .pill-location.at-home { color: #67dfb2; }
 
     .placeholder-page {
       display: flex;
