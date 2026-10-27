@@ -15,7 +15,7 @@ interface HomeAssistant {
   states: Record<string, HAEntity>;
   callWS?: (message: {type: string}) => Promise<unknown>;
   callService?: (domain: string, service: string, data?: Record<string, unknown>) => Promise<unknown>;
-  user?: { name?: string };
+  user?: { id?: string; name?: string };
   config?: {
     unit_system?: {
       temperature?: string;
@@ -357,7 +357,35 @@ export class ControlRoomDashboard extends LitElement {
   private registryLoading = false;
 
 
+  @state() private welcomeMode: "automatic" | "shared" = "automatic";
+  @state() private welcomeShowEyebrow = true;
+  @state() private welcomeShowSubtitle = true;
+  @state() private welcomeShowPeople = true;
+  @state() private welcomeShowGreeting = true;
+  @state() private welcomeEyebrow = "";
+  @state() private welcomeSubtitle = "";
   private clockInterval?: ReturnType<typeof setInterval>;
+
+  private restoreWelcome(): void {
+    try {
+      const data = JSON.parse(localStorage.getItem("controlroom-welcome-v1") || "{}");
+      if (data.mode === "automatic" || data.mode === "shared") this.welcomeMode = data.mode;
+      for (const [key, field] of [["eyebrow", "welcomeEyebrow"], ["subtitle", "welcomeSubtitle"]] as const) {
+        if (typeof data[key] === "string") (this as any)[field] = data[key];
+      }
+      for (const [key, field] of [["showEyebrow", "welcomeShowEyebrow"], ["showSubtitle", "welcomeShowSubtitle"], ["showPeople", "welcomeShowPeople"], ["showGreeting", "welcomeShowGreeting"]] as const) {
+        if (typeof data[key] === "boolean") (this as any)[field] = data[key];
+      }
+    } catch (error) { console.warn("ControlRoom: welcome preferences unavailable", error); }
+  }
+  private saveWelcome(): void {
+    try { localStorage.setItem("controlroom-welcome-v1", JSON.stringify({
+      mode: this.welcomeMode, eyebrow: this.welcomeEyebrow, subtitle: this.welcomeSubtitle,
+      showEyebrow: this.welcomeShowEyebrow, showSubtitle: this.welcomeShowSubtitle,
+      showPeople: this.welcomeShowPeople, showGreeting: this.welcomeShowGreeting
+    })); } catch (error) { console.warn("ControlRoom: welcome preferences could not be saved", error); }
+  }
+
 
   private restorePreferences(): void {
     if (this.settingsInitialized) return;
@@ -442,6 +470,7 @@ export class ControlRoomDashboard extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this.restorePreferences();
+    this.restoreWelcome();
     this.currentTime = new Date();
     this.clockInterval = setInterval(() => {
       this.currentTime = new Date();
@@ -593,37 +622,84 @@ export class ControlRoomDashboard extends LitElement {
     }
   }
 
-  private renderPeoplePills() {
+  private getCurrentPerson(): HAEntity | undefined {
     const people = this.getPeople();
-    if (!people.length) return nothing;
+    const userId = this.hass?.user?.id;
+    if (userId) {
+      const match = people.find(p => p.attributes.user_id === userId);
+      if (match) return match;
+    }
+    const username = this.hass?.user?.name?.trim().toLocaleLowerCase();
+    return username ? people.find(p => this.getPersonName(p).trim().toLocaleLowerCase() === username) : undefined;
+  }
 
-    return html`
-      <div class="people-pills" aria-label=${this.t("people")}>
-        ${people.map((person) => {
-          const picture = person.attributes.entity_picture;
-          const hasPicture = typeof picture === "string" &&
-            (picture.startsWith("/") || picture.startsWith("https://") ||
-             picture.startsWith("http://"));
-          const isHome = person.state === "home";
-          const name = this.getPersonName(person);
-          return html`
-            <div class="person-pill" title=${`${name} · ${this.getPersonLocation(person)}`}>
-              <div class="pill-avatar">
-                ${hasPicture
-                  ? html`<img src=${picture} alt=${name} loading="lazy" />`
-                  : html`<span>${name.charAt(0).toUpperCase()}</span>`}
-              </div>
-              <div class="pill-details">
-                <span class="pill-name">${name}</span>
-                <span class="pill-location ${isHome ? "at-home" : ""}">
-                  ${this.getPersonLocation(person)}
-                </span>
-              </div>
-            </div>
-          `;
-        })}
-      </div>
-    `;
+  private renderPersonAvatar(person: HAEntity, large = false) {
+    const picture = person.attributes.entity_picture;
+    const name = this.getPersonName(person);
+    const hasPicture = typeof picture === "string" && /^(\/|https?:\/\/)/.test(picture);
+    return html`<span class="pill-avatar ${large ? "avatar-large" : ""}">
+      ${hasPicture ? html`<img src=${picture} alt=${name} loading="lazy" />` : html`<span>${name.charAt(0).toUpperCase()}</span>`}
+    </span>`;
+  }
+
+  private renderPeoplePills(people: HAEntity[]) {
+    if (!people.length || !this.welcomeShowPeople) return nothing;
+    return html`<div class="people-pills" aria-label=${this.t("people")}>
+      ${people.map(person => html`<div class="person-pill" title=${`${this.getPersonName(person)} · ${this.getPersonLocation(person)}`}>
+        ${this.renderPersonAvatar(person)}
+        <div class="pill-details"><span class="pill-name">${this.getPersonName(person)}</span>
+          <span class="pill-location ${person.state === "home" ? "at-home" : ""}">${this.getPersonLocation(person)}</span>
+        </div>
+      </div>`)}
+    </div>`;
+  }
+
+  private renderWelcomeSettings() {
+    return html`<section class="welcome-settings">
+      <div class="eyebrow">Startseite</div><h2>Begrüßung & Personen</h2>
+      <p>Personalisierung dieses Browsers / Displays</p>
+      <label class="welcome-setting-row"><span>Begrüßungsmodus</span>
+        <select .value=${this.welcomeMode} @change=${(e: Event) => {this.welcomeMode = (e.target as HTMLSelectElement).value as "automatic" | "shared"; this.saveWelcome();}}>
+          <option value="automatic">Automatisch · angemeldete Person</option>
+          <option value="shared">Gemeinsam · iSG Display</option>
+        </select></label>
+      ${([
+        ["welcomeShowGreeting", "Begrüßung anzeigen"],
+        ["welcomeShowEyebrow", "Bereichstitel anzeigen"],
+        ["welcomeShowSubtitle", "Untertitel anzeigen"],
+        ["welcomeShowPeople", "Personen und Standorte anzeigen"]
+      ] as const).map(([key, label]) => html`<label class="welcome-setting-row"><span>${label}</span>
+        <input type="checkbox" .checked=${this[key]} @change=${(e: Event) => {(this as any)[key] = (e.target as HTMLInputElement).checked; this.saveWelcome();}} /></label>`)}
+      <label class="welcome-setting-text">Bereichstitel
+        <input type="text" .value=${this.welcomeEyebrow || this.t("homeLabel")} @change=${(e: Event) => {this.welcomeEyebrow = (e.target as HTMLInputElement).value; this.saveWelcome();}} /></label>
+      <label class="welcome-setting-text">Untertitel
+        <input type="text" .value=${this.welcomeSubtitle || this.t("subtitle")} @change=${(e: Event) => {this.welcomeSubtitle = (e.target as HTMLInputElement).value; this.saveWelcome();}} /></label>
+    </section>`;
+  }
+
+  private renderSmartBar() {
+    const calendar = this.hass?.states["calendar.controlroom_mull_stadtreinigung_hamburg"];
+    const eventName = typeof calendar?.attributes.message === "string" ? calendar.attributes.message : "—";
+    const eventDate = calendar?.attributes.start_time;
+    let eventWhen = "Nächste Abholung";
+    if (typeof eventDate === "string") {
+      const date = new Date(eventDate);
+      if (!Number.isNaN(date.getTime())) {
+        const today = new Date(this.currentTime.getFullYear(), this.currentTime.getMonth(), this.currentTime.getDate()).getTime();
+        const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+        const days = Math.round((eventDay - today) / 86400000);
+        eventWhen = days === 0 ? "Heute" : days === 1 ? "Morgen" : new Intl.DateTimeFormat("de", {day:"2-digit",month:"short"}).format(date);
+      }
+    }
+    return html`<div class="smart-bar">
+      ${this.renderWeather()}
+      <div class="smart-divider"></div>
+      <div class="smart-segment">${this.renderIcon("mdi:clock-outline")}
+        <div><strong>${this.getTime()}</strong><small>${this.getDate()}</small></div></div>
+      <div class="smart-divider"></div>
+      <div class="smart-segment smart-waste">${this.renderIcon("mdi:trash-can-outline")}
+        <div><strong>${eventName}</strong><small>${eventWhen}</small></div></div>
+    </div>`;
   }
 
   private getAllLightEntities(): HAEntity[] {
@@ -1050,19 +1126,21 @@ export class ControlRoomDashboard extends LitElement {
       { key: "security", icon: "mdi:shield-check-outline" }
     ];
 
+    const currentPerson = this.welcomeMode === "shared" ? undefined : this.getCurrentPerson();
+    const otherPeople = this.getPeople().filter(person => !currentPerson || person.entity_id !== currentPerson.entity_id);
+    const greetingName = currentPerson ? this.getPersonName(currentPerson) : this.hass?.user?.name || "";
     return html`
       <section class="hero">
-        <div class="eyebrow">${this.t("homeLabel")}</div>
+        ${this.welcomeShowEyebrow ? html`<div class="eyebrow">${this.welcomeEyebrow || this.t("homeLabel")}</div>` : nothing}
         <div class="hero-content">
           <div class="hero-message">
-            <h1>
-              ${this.getGreeting()},
-              ${this.hass?.user?.name || "ControlRoom"}
-              <span class="wave">👋</span>
-            </h1>
-            <p>${this.t("subtitle")}</p>
+            ${this.welcomeShowGreeting ? html`<div class="welcome-title">
+              ${currentPerson ? this.renderPersonAvatar(currentPerson, true) : nothing}
+              <h1>${this.getGreeting()}${this.welcomeMode === "shared" ? "." : greetingName ? `, ${greetingName}` : "."}</h1>
+            </div>` : nothing}
+            ${this.welcomeShowSubtitle ? html`<p>${this.welcomeSubtitle || this.t("subtitle")}</p>` : nothing}
           </div>
-          ${this.renderPeoplePills()}
+          ${this.renderPeoplePills(otherPeople)}
         </div>
       </section>
 
@@ -1090,6 +1168,7 @@ export class ControlRoomDashboard extends LitElement {
   private renderPage() {
     if (this.activePage === "home") return this.renderHome();
     if (this.activePage === "lights") return this.renderLightsPage();
+    if (this.activePage === "settings") return this.renderWelcomeSettings();
 
     const page = pages.find(
       (item) => item.id === this.activePage
@@ -1767,11 +1846,33 @@ export class ControlRoomDashboard extends LitElement {
     @media (prefers-reduced-motion: reduce) {
       .weather-icon { animation: none; }
     }
+    /* Compact information bar and personalized greeting */
+    .smart-bar {display:flex;align-items:center;gap:14px;min-height:62px;padding:8px 15px;border:1px solid rgba(215,175,239,.13);border-radius:18px;background:rgba(152,113,193,.095);backdrop-filter:blur(18px)}
+    .smart-bar .weather {min-width:0;min-height:0;padding:0;border:0;background:none;gap:8px;backdrop-filter:none}
+    .smart-bar .weather-icon ha-icon {--mdc-icon-size:27px}
+    .smart-bar .weather-temp,.smart-segment strong {font-size:15px;font-weight:700;white-space:nowrap}
+    .smart-bar .weather-condition,.smart-segment small {display:block;font-size:10px;color:#aaa0b9;white-space:nowrap;margin-top:2px}
+    .smart-divider {width:1px;height:32px;flex:none;background:rgba(213,178,236,.19)}
+    .smart-segment {display:flex;align-items:center;gap:9px;min-width:0}
+    .smart-segment>ha-icon {--mdc-icon-size:21px;color:#c6a5dd;flex:none}
+    .smart-segment>div {min-width:0}
+    .smart-waste strong {display:block;max-width:125px;overflow:hidden;text-overflow:ellipsis}
+    .welcome-title {display:flex;align-items:center;gap:14px}
+    .welcome-title h1 {margin:12px 0 10px}
+    .pill-avatar.avatar-large {flex:0 0 49px;width:49px;height:49px;border:1px solid rgba(223,190,245,.4)}
+    .welcome-settings {max-width:680px;padding:25px;border:1px solid rgba(213,174,239,.17);border-radius:22px;background:rgba(255,255,255,.035)}
+    .welcome-settings h2 {margin:12px 0;font-size:24px}
+    .welcome-settings p {color:#aaa0b9;font-size:12px;margin-bottom:24px}
+    .welcome-setting-row {display:flex;justify-content:space-between;align-items:center;gap:20px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13px}
+    .welcome-setting-row select,.welcome-setting-text input {padding:10px;border:1px solid rgba(211,174,239,.2);border-radius:10px;background:#30263c;color:#fff;max-width:100%}
+    .welcome-setting-row input {accent-color:#b58bd7}
+    .welcome-setting-text {display:flex;flex-direction:column;gap:8px;margin-top:17px;color:#c8b7d6;font-size:12px}
+    @media(max-width:1100px){.topbar{align-items:flex-start;flex-wrap:wrap}.topbar-right{margin-left:auto}.smart-bar{gap:10px}}
+    @media(max-width:650px){.smart-bar{gap:8px;padding:8px}.smart-waste{display:none}.smart-bar .smart-divider:last-of-type{display:none}.smart-bar .weather-condition{display:none}.hero-content{align-items:flex-start}.welcome-title h1{font-size:clamp(24px,6vw,36px)}}
+
   `;
 
   protected render() {
-    const connected = Boolean(this.hass);
-
     return html`
       <div class="dashboard">
         ${this.renderSidebar()}
@@ -1794,20 +1895,7 @@ export class ControlRoomDashboard extends LitElement {
               </div>
             </div>
 
-            <div class="topbar-right">
-              ${this.renderWeather()}
-
-              <div class="clock">
-                <div class="clock-time">${this.getTime()}</div>
-                <div class="clock-date">${this.getDate()}</div>
-              </div>
-
-              <div class="connection">
-                <span class="small-dot"></span>
-                ${connected
-                  ? this.t("connected")
-                  : this.t("waiting")}
-              </div>
+            <div class="topbar-right">${this.renderSmartBar()}
             </div>
           </header>
 
