@@ -1626,56 +1626,98 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             { id: "obsidian", name: "Obsidian", accent: "#b6b9c2", bg: "#101114", surface: "#25272c", text: "#f6f6f8" }
         ];
     }
-    crThemeVars() {
-        const p = this.crPalettes().find(p => p.id === this.crTheme) || this.crPalettes()[0];
+    // V10: Resolve the selected HA theme locally. Never call setTheme() or mutate document styles.
+    crResolvedTheme() {
+        const palette = this.crPalettes().find(p => p.id === this.crTheme) || this.crPalettes()[0];
         const registry = this.hass?.themes;
         const selected = this.crHATheme || registry?.theme || "";
         const raw = registry?.themes?.[selected];
-        const dark = this.crHAMode === "auto" ? (registry?.darkMode ?? false) : this.crHAMode === "dark";
-        const modes = raw?.["modes"];
-        const chosen = raw ? { ...raw, ...(modes?.[dark ? "dark" : "light"] || {}), ...(raw[dark ? "dark" : "light"] || {}) } : undefined;
-        const cssValue = (...keys) => {
-            for (const key of keys) {
-                const value = chosen?.[key] ?? chosen?.[`--${key}`];
-                if (typeof value === "string" && value.trim())
-                    return value.trim();
-            }
-            if (!this.crHATheme && this.crHAMode === "auto") {
-                const root = this.getRootNode();
-                const host = root instanceof ShadowRoot ? root.host : document.documentElement;
-                for (const key of keys) {
-                    const computed = getComputedStyle(host).getPropertyValue(`--${key}`).trim() || getComputedStyle(document.documentElement).getPropertyValue(`--${key}`).trim();
-                    if (computed)
-                        return computed;
-                }
-            }
-            return "";
-        };
-        const ha = this.crThemeSource === "ha";
-        const fallback = ha ? (dark ? { accent: "#75a7dc", bg: "#141a22", surface: "#252d37", text: "#f4f6fa", muted: "#b7c0cc" } : { accent: "#386da6", bg: "#f5f6f9", surface: "#ffffff", text: "#202733", muted: "#586474" }) : { accent: p.accent, bg: p.bg, surface: p.surface, text: p.text, muted: this.crIsLightColor(p.bg) ? "#746c80" : "#b9b2c6" };
-        const pick = (defaultValue, ...keys) => ha ? (cssValue(...keys) || defaultValue) : defaultValue;
-        const accent = pick(fallback.accent, "accent-color", "primary-color", "state-icon-color");
-        const bg = pick(fallback.bg, "primary-background-color", "lovelace-background");
-        const surface = pick(fallback.surface, "card-background-color", "ha-card-background", "secondary-background-color");
-        const fg = pick(fallback.text, "primary-text-color");
-        const muted = pick(fallback.muted, "secondary-text-color");
-        const radius = this.crThemeStyle === "minimal" ? "9px" : this.crThemeStyle === "solid" ? "15px" : "22px";
-        const isLight = ha ? this.crIsLightColor(bg) : this.crIsLightColor(bg);
-        return `--cr-accent:${accent};--cr-bg:${bg};--cr-surface:${surface};--cr-text:${fg};--cr-muted:${muted};--cr-is-light:${isLight ? 1 : 0};--cr-radius:${radius};--cr-blur:${this.crThemeStyle === "glass" ? "blur(22px)" : "none"};--primary-color:${accent};--accent-color:${accent};--primary-text-color:${fg};--secondary-text-color:${muted};--primary-background-color:${bg};--card-background-color:${surface};--paper-item-icon-color:${accent};--state-icon-color:${accent};--mdc-theme-primary:${accent};`;
-    }
-    crThemeIsLight() {
-        const p = this.crPalettes().find(p => p.id === this.crTheme) || this.crPalettes()[0];
-        if (this.crThemeSource !== "ha")
-            return this.crIsLightColor(p.bg);
-        const registry = this.hass?.themes;
-        const selected = this.crHATheme || registry?.theme || "";
-        const raw = registry?.themes?.[selected];
-        const dark = this.crHAMode === "auto" ? (registry?.darkMode ?? false) : this.crHAMode === "dark";
+        const dark = this.crHAMode === "dark" || (this.crHAMode === "auto" && !!registry?.darkMode);
         const modes = raw?.["modes"];
         const mode = (modes?.[dark ? "dark" : "light"] || raw?.[dark ? "dark" : "light"] || {});
-        const bg = mode["primary-background-color"] || raw?.["primary-background-color"] || mode["lovelace-background"] || raw?.["lovelace-background"];
-        return typeof bg === "string" && /^#[0-9a-f]{3,6}$/i.test(bg) ? this.crIsLightColor(bg) : !dark;
+        const values = {};
+        const assign = (obj) => {
+            if (!obj)
+                return;
+            for (const [key, val] of Object.entries(obj)) {
+                if (typeof val === "string" || typeof val === "number")
+                    values[key.replace(/^--/, "")] = String(val).trim();
+            }
+        };
+        assign(raw);
+        assign(mode);
+        // Resolve var(--some-token, fallback) inside theme definitions, including nested references.
+        const resolve = (key, depth = 0) => {
+            if (depth > 10)
+                return "";
+            let val = values[key] || "";
+            if (!val)
+                return "";
+            return val.replace(/var\(\s*--([\w-]+)\s*(?:,\s*([^()]*))?\)/g, (_m, k, fallback) => resolve(k, depth + 1) || fallback?.trim() || "");
+        };
+        const ha = this.crThemeSource === "ha";
+        const fallback = ha ? (dark ? { accent: "#75a7dc", bg: "#141a22", surface: "#252d37", text: "#f4f6fa", muted: "#b7c0cc" } : { accent: "#386da6", bg: "#f5f6f9", surface: "#ffffff", text: "#202733", muted: "#586474" }) : { accent: palette.accent, bg: palette.bg, surface: palette.surface, text: palette.text, muted: this.crIsLightColor(palette.bg) ? "#746c80" : "#b9b2c6" };
+        const pick = (defaultValue, ...keys) => {
+            if (!ha)
+                return defaultValue;
+            for (const key of keys) {
+                const value = resolve(key);
+                if (value)
+                    return value;
+            }
+            // Only read inherited HA variables for the current active theme, not a different selected theme.
+            if (!raw && !this.crHATheme && this.crHAMode === "auto") {
+                for (const key of keys) {
+                    const value = getComputedStyle(document.documentElement).getPropertyValue(`--${key}`).trim();
+                    if (value)
+                        return value;
+                }
+            }
+            return defaultValue;
+        };
+        const accent = pick(fallback.accent, "accent-color", "primary-color", "state-icon-color");
+        const bg = pick(fallback.bg, "lovelace-background", "primary-background-color");
+        const surface = pick(fallback.surface, "ha-card-background", "card-background-color", "secondary-background-color");
+        const fg = pick(fallback.text, "primary-text-color");
+        const muted = pick(fallback.muted, "secondary-text-color", "disabled-text-color");
+        const light = this.crIsLightColor(bg) || (ha && !/^#[0-9a-f]{3,8}$/i.test(bg) && !dark);
+        return { accent, bg, surface, fg, muted, light, ha, resolve, pick };
     }
+    crThemeVars() {
+        const t = this.crResolvedTheme();
+        const radius = this.crThemeStyle === "minimal" ? "9px" : this.crThemeStyle === "solid" ? "15px" : "22px";
+        const css = {
+            "--cr-accent": t.accent, "--cr-bg": t.bg, "--cr-surface": t.surface, "--cr-text": t.fg, "--cr-muted": t.muted,
+            "--cr-is-light": t.light ? "1" : "0", "--cr-radius": radius, "--cr-blur": this.crThemeStyle === "glass" ? "blur(22px)" : "none",
+            "--primary-color": t.accent, "--accent-color": t.accent, "--primary-text-color": t.fg, "--secondary-text-color": t.muted,
+            "--primary-background-color": t.bg, "--card-background-color": t.surface, "--ha-card-background": t.surface,
+            "--paper-item-icon-color": t.accent, "--state-icon-color": t.accent, "--mdc-theme-primary": t.accent
+        };
+        if (t.ha) {
+            // Forward *all* theme tokens to this dashboard's subtree (glass, border, shadow, etc.).
+            const registry = this.hass?.themes;
+            const raw = registry?.themes?.[this.crHATheme || registry?.theme || ""];
+            const dark = this.crHAMode === "dark" || (this.crHAMode === "auto" && !!registry?.darkMode);
+            const modes = raw?.["modes"];
+            const mode = (modes?.[dark ? "dark" : "light"] || raw?.[dark ? "dark" : "light"] || {});
+            for (const source of [raw, mode])
+                for (const [key, value] of Object.entries(source || {})) {
+                    if ((typeof value === "string" || typeof value === "number") && !key.startsWith("modes")) {
+                        const name = `--${key.replace(/^--/, "")}`;
+                        css[name] = String(value);
+                    }
+                }
+            // Semantic values win over theme aliases so ControlRoom components remain consistent.
+            css["--primary-color"] = t.accent;
+            css["--accent-color"] = t.accent;
+            css["--primary-background-color"] = t.bg;
+            css["--primary-text-color"] = t.fg;
+            css["--secondary-text-color"] = t.muted;
+            css["--card-background-color"] = t.surface;
+        }
+        return Object.entries(css).map(([key, value]) => `${key}:${value}`).join(";") + ";";
+    }
+    crThemeIsLight() { return this.crResolvedTheme().light; }
     crIsLightColor(color) {
         const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
         if (!hex)
@@ -2997,6 +3039,16 @@ ControlRoomDashboard.styles = i$3 `
     .dashboard.cr-theme-light .settings-option,.dashboard.cr-theme-light .overview-card,.dashboard.cr-theme-light .cr-room-section{background:color-mix(in srgb,var(--cr-surface) 92%,var(--cr-bg))!important}
     .dashboard.cr-theme-light .studio-mood,.dashboard.cr-theme-light .studio-mood-subtitle,.dashboard.cr-theme-light .nav-item,.dashboard.cr-theme-light .settings-note{color:var(--cr-text)!important}
 
+    /* V10: bridge HA/HACS theme tokens to custom ControlRoom surfaces only. */
+    .dashboard .topbar,.dashboard .studio-mood,.dashboard .settings-center{color:var(--cr-text)!important}
+    .dashboard .studio-hero,.dashboard .lighting-preferences,.dashboard .cr-room-tile,.dashboard .cr-room-section,
+    .dashboard .overview-card,.dashboard .settings-option,.dashboard .studio-room-card{
+      box-shadow:var(--ha-card-box-shadow,0 8px 28px rgba(0,0,0,.10));
+      border-radius:var(--ha-card-border-radius,var(--cr-radius));
+    }
+    .dashboard.cr-theme-light .studio-mood,.dashboard.cr-theme-light .overview-card,
+    .dashboard.cr-theme-light .studio-room-card,.dashboard.cr-theme-light .cr-room-tile,
+    .dashboard.cr-theme-light .settings-option{color:var(--cr-text)!important}
     /* V9: one scoped color system; no global HA theme mutation */
     .dashboard { color:var(--cr-text)!important; background:var(--cr-bg)!important; }
     .dashboard .sidebar {background:color-mix(in srgb,var(--cr-bg) 74%,var(--cr-surface))!important;border-color:color-mix(in srgb,var(--cr-text) 10%,transparent)!important}
