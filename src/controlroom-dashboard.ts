@@ -1498,22 +1498,34 @@ export class ControlRoomDashboard extends LitElement {
     {id:"blue",name:"Midnight Blue",accent:"#559cff",bg:"#0c1628",surface:"#1c304b",text:"#f5f8ff"},
     {id:"emerald",name:"Emerald",accent:"#43c6a0",bg:"#0c1b19",surface:"#1c3530",text:"#f2fff9"},
     {id:"burgundy",name:"Burgundy",accent:"#ce6c90",bg:"#221219",surface:"#3a222d",text:"#fff4f7"},
-    {id:"gold",name:"Champagne Gold",accent:"#d5b77b",bg:"#1d1a17",surface:"#353029",text:"#fff9ed"},
-    {id:"pearl",name:"Pearl White",accent:"#8270ba",bg:"#f5f3f8",surface:"#ffffff",text:"#30283a"},
+    {id:"gold",name:"Champagne Gold",accent:"#c5ad87",bg:"#1d1b19",surface:"#302c27",text:"#fff9ed"},
+    {id:"pearl",name:"Pearl White",accent:"#7664a9",bg:"#f5f3f8",surface:"#ffffff",text:"#30283a"},
     {id:"obsidian",name:"Obsidian",accent:"#b6b9c2",bg:"#101114",surface:"#25272c",text:"#f6f6f8"}
   ];}
   private crThemeVars(){
     const p=this.crPalettes().find(p=>p.id===this.crTheme)||this.crPalettes()[0];
-    const themes=(this.hass as unknown as {themes?:{themes?:Record<string,Record<string,string>>}})?.themes?.themes || {};
-    const chosen=this.crHATheme && this.crThemeSource==="ha" ? themes[this.crHATheme] : undefined;
-    const fromHA=(key:string, fallback:string)=> chosen?.[key] || `var(--${key}, ${fallback})`;
+    const registry=(this.hass as unknown as {themes?:{themes?:Record<string,Record<string,unknown>>;darkMode?:boolean;theme?:string}})?.themes;
+    const selected=this.crHATheme || registry?.theme || "";
+    const raw=registry?.themes?.[selected];
+    const dark=registry?.darkMode ?? false;
+    const chosen=raw ? ((raw[dark?"dark":"light"] || raw["light"] || raw["dark"] || raw) as Record<string,unknown>) : undefined;
+    const cssValue=(key:string)=>{
+      const value=chosen?.[key];
+      if(typeof value==="string" && value.trim())return value.trim();
+      // Read the HA host's computed CSS variables, not our own themed subtree.
+      const host=this.getRootNode() instanceof ShadowRoot ? (this.getRootNode() as ShadowRoot).host : document.documentElement;
+      const computed=getComputedStyle(host as Element).getPropertyValue(`--${key}`).trim() || getComputedStyle(document.documentElement).getPropertyValue(`--${key}`).trim();
+      return computed || "";
+    };
     const ha=this.crThemeSource==="ha";
-    const accent=ha?fromHA("primary-color",p.accent):p.accent;
-    const bg=ha?fromHA("primary-background-color",p.bg):p.bg;
-    const surface=ha?fromHA("card-background-color",p.surface):p.surface;
-    const text=ha?fromHA("primary-text-color",p.text):p.text;
-    const muted=ha?fromHA("secondary-text-color","#bcb1c8"):"#bcb1c8";
-    return `--cr-accent:${accent};--cr-bg:${bg};--cr-surface:${surface};--cr-text:${text};--cr-muted:${muted};--cr-radius:${this.crThemeStyle==="minimal"?'8px':this.crThemeStyle==="solid"?'14px':'22px'};--cr-blur:${this.crThemeStyle==="glass"?'blur(18px)':'none'};`;
+    const pick=(key:string,fallback:string)=>ha?(cssValue(key)||fallback):fallback;
+    const accent=pick("primary-color",p.accent);
+    const bg=pick("primary-background-color",p.bg);
+    const surface=pick("card-background-color",p.surface);
+    const fg=pick("primary-text-color",p.text);
+    const muted=pick("secondary-text-color",this.crTheme==="pearl"?"#746c80":"#b9b2c6");
+    const radius=this.crThemeStyle==="minimal"?"9px":this.crThemeStyle==="solid"?"15px":"22px";
+    return `--cr-accent:${accent};--cr-bg:${bg};--cr-surface:${surface};--cr-text:${fg};--cr-muted:${muted};--cr-radius:${radius};--cr-blur:${this.crThemeStyle==="glass"?"blur(22px)":"none"};--primary-color:${accent};--accent-color:${accent};--primary-text-color:${fg};--secondary-text-color:${muted};--primary-background-color:${bg};--card-background-color:${surface};--paper-item-icon-color:${accent};--state-icon-color:${accent};--mdc-theme-primary:${accent};`;
   }
   private crAvailableHAThemes():string[]{
     const themes=(this.hass as unknown as {themes?:{themes?:Record<string,unknown>}})?.themes?.themes;
@@ -2662,6 +2674,20 @@ export class ControlRoomDashboard extends LitElement {
     .dashboard.cr-theme-solid .smart-bar,.dashboard.cr-theme-solid .cr-room-tile{backdrop-filter:none!important;background:var(--cr-surface)!important}
     .dashboard.cr-theme-minimal .smart-bar,.dashboard.cr-theme-minimal .cr-room-tile{box-shadow:none!important;backdrop-filter:none!important}
     .dashboard.cr-theme-light .cr-room-tile-body,.dashboard.cr-theme-light .settings-option{color:var(--cr-text)!important}
+    /* Theme Studio v3 — unified icon and control colors */
+    .dashboard ha-icon:not(.cr-keep-color),.dashboard .settings-option-icon ha-icon,.dashboard .overview-card ha-icon,.dashboard .nav-item ha-icon,.dashboard .cr-room-section ha-icon{color:var(--cr-accent)!important}
+    .dashboard .settings-option-icon,.dashboard .overview-card-icon,.dashboard .card-icon,.dashboard .nav-item.active{color:var(--cr-accent)!important}
+    .dashboard button:focus-visible,.dashboard select:focus-visible{outline:2px solid var(--cr-accent)!important;outline-offset:2px}
+    .dashboard .cr-theme-actions button:last-child{background:var(--cr-accent)!important;color:var(--cr-bg)!important}
+    .dashboard .cr-theme-choice,.dashboard .cr-theme-style-list button{background:color-mix(in srgb,var(--cr-surface) 80%,transparent)!important;color:var(--cr-text)!important}
+    .dashboard.cr-theme-glass .overview-card,.dashboard.cr-theme-glass .smart-bar,.dashboard.cr-theme-glass .settings-option,.dashboard.cr-theme-glass .cr-room-tile,.dashboard.cr-theme-glass .cr-room-section{background:color-mix(in srgb,var(--cr-surface) 67%,transparent)!important;backdrop-filter:blur(24px) saturate(145%)!important;box-shadow:0 14px 40px #00000022,inset 0 1px #ffffff18!important;border:1px solid color-mix(in srgb,var(--cr-text) 16%,transparent)!important;border-radius:22px!important}
+    .dashboard.cr-theme-solid .overview-card,.dashboard.cr-theme-solid .smart-bar,.dashboard.cr-theme-solid .settings-option,.dashboard.cr-theme-solid .cr-room-tile,.dashboard.cr-theme-solid .cr-room-section{background:var(--cr-surface)!important;backdrop-filter:none!important;box-shadow:0 4px 12px #00000016!important;border:1px solid color-mix(in srgb,var(--cr-text) 11%,transparent)!important;border-radius:15px!important}
+    .dashboard.cr-theme-minimal .overview-card,.dashboard.cr-theme-minimal .smart-bar,.dashboard.cr-theme-minimal .settings-option,.dashboard.cr-theme-minimal .cr-room-tile,.dashboard.cr-theme-minimal .cr-room-section{background:color-mix(in srgb,var(--cr-surface) 58%,var(--cr-bg))!important;backdrop-filter:none!important;box-shadow:none!important;border:1px solid color-mix(in srgb,var(--cr-text) 10%,transparent)!important;border-radius:9px!important}
+    .dashboard.cr-theme-minimal .overview-card{min-height:85px!important;padding:13px!important}
+    .dashboard.cr-theme-minimal .settings-option{padding:11px!important}
+    .dashboard.cr-theme-light .nav-item,.dashboard.cr-theme-light .settings-option,.dashboard.cr-theme-light .overview-card{color:var(--cr-text)!important}
+    .dashboard.cr-theme-light .nav-item:not(.active) ha-icon{color:color-mix(in srgb,var(--cr-accent) 65%,var(--cr-text))!important}
+
   `;
 
   protected render() {
