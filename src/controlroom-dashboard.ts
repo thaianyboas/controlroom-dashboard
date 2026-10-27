@@ -939,7 +939,7 @@ export class ControlRoomDashboard extends LitElement {
     if (section === "overview") return html`<div class="settings-center">
       <div class="settings-intro"><div class="eyebrow">CONTROLROOM</div><h1>Einstellungen</h1><p>Gestalte dein Zuhause, ganz nach deinen Wünschen.</p></div>
       <label class="settings-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Einstellungen durchsuchen…" .value=${this.settingsSearch} @input=${(e:Event) => {this.settingsSearch = (e.target as HTMLInputElement).value;}} aria-label="Einstellungen durchsuchen" /></label>
-      ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => html`<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c=>c.group===group).map(c=>html`<button class="settings-option" @click=${()=>{if(c.id==="welcome" || c.id==="smartbar") this.beginSettingsEdit(c.id); else {this.settingsSection=c.id;if(c.id==="rooms") this.roomStyleSnapshot=JSON.stringify(this.roomVisualData());if(c.id==="themes")this.crThemeSnapshot=JSON.stringify(this.crThemeData());}}}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div></section>`) : html`<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
+      ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => html`<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c=>c.group===group).map(c=>html`<button class="settings-option" @click=${()=>{if(c.id==="welcome" || c.id==="smartbar") this.beginSettingsEdit(c.id); else {this.settingsSection=c.id;if(c.id==="rooms") this.roomStyleSnapshot=JSON.stringify({style:this.roomStyle,auto:this.roomAutoSwitch,byArea:this.roomStyleByArea,photos:this.roomPhotoUrls,images:this.roomImages});if(c.id==="themes")this.crThemeSnapshot=JSON.stringify(this.crThemeData());}}}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div></section>`) : html`<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
       <p class="settings-local-note">Änderungen werden auf diesem Browser / Display gespeichert.</p>
     </div>`;
     if (section === "themes") return this.renderThemeSettings();
@@ -1508,22 +1508,30 @@ export class ControlRoomDashboard extends LitElement {
     const selected=this.crHATheme || registry?.theme || "";
     const raw=registry?.themes?.[selected];
     const dark=registry?.darkMode ?? false;
-    const chosen=raw ? ((raw[dark?"dark":"light"] || raw["light"] || raw["dark"] || raw) as Record<string,unknown>) : undefined;
-    const cssValue=(key:string)=>{
-      const value=chosen?.[key] ?? chosen?.[`--${key}`];
-      if(typeof value==="string" && value.trim())return value.trim();
-      // Read the HA host's computed CSS variables, not our own themed subtree.
-      const host=this.getRootNode() instanceof ShadowRoot ? (this.getRootNode() as ShadowRoot).host : document.documentElement;
-      const computed=getComputedStyle(host as Element).getPropertyValue(`--${key}`).trim() || getComputedStyle(document.documentElement).getPropertyValue(`--${key}`).trim();
-      return computed || "";
+    const modes=raw?.["modes"] as Record<string,Record<string,unknown>>|undefined;
+    const chosen=raw ? ({...raw,...(modes?.[dark?"dark":"light"] || modes?.["light"] || modes?.["dark"] || {}),...((raw[dark?"dark":"light"] || raw["light"] || raw["dark"] || {}) as Record<string,unknown>)} as Record<string,unknown>) : undefined;
+    const cssValue=(...keys:string[])=>{
+      for(const key of keys){
+        const value=chosen?.[key] ?? chosen?.[`--${key}`];
+        if(typeof value==="string" && value.trim())return value.trim();
+      }
+      // Only inherit current HA colors when no explicit theme was selected.
+      if(!this.crHATheme){
+        const host=this.getRootNode() instanceof ShadowRoot ? (this.getRootNode() as ShadowRoot).host : document.documentElement;
+        for(const key of keys){
+          const computed=getComputedStyle(host as Element).getPropertyValue(`--${key}`).trim() || getComputedStyle(document.documentElement).getPropertyValue(`--${key}`).trim();
+          if(computed)return computed;
+        }
+      }
+      return "";
     };
     const ha=this.crThemeSource==="ha";
-    const pick=(key:string,fallback:string)=>ha?(cssValue(key)||fallback):fallback;
-    const accent=pick("accent-color",pick("primary-color",p.accent));
-    const bg=pick("primary-background-color",pick("lovelace-background",p.bg));
-    const surface=pick("card-background-color",pick("ha-card-background",p.surface));
-    const fg=pick("primary-text-color",p.text);
-    const muted=pick("secondary-text-color",this.crTheme==="pearl"?"#746c80":"#b9b2c6");
+    const pick=(fallback:string,...keys:string[])=>ha?(cssValue(...keys)||fallback):fallback;
+    const accent=pick(p.accent,"accent-color","primary-color","state-icon-color");
+    const bg=pick(p.bg,"primary-background-color","lovelace-background");
+    const surface=pick(p.surface,"card-background-color","ha-card-background","secondary-background-color");
+    const fg=pick(p.text,"primary-text-color");
+    const muted=pick(this.crTheme==="pearl"?"#746c80":"#b9b2c6","secondary-text-color");
     const radius=this.crThemeStyle==="minimal"?"9px":this.crThemeStyle==="solid"?"15px":"22px";
     return `--cr-accent:${accent};--cr-bg:${bg};--cr-surface:${surface};--cr-text:${fg};--cr-muted:${muted};--cr-radius:${radius};--cr-blur:${this.crThemeStyle==="glass"?"blur(22px)":"none"};--primary-color:${accent};--accent-color:${accent};--primary-text-color:${fg};--secondary-text-color:${muted};--primary-background-color:${bg};--card-background-color:${surface};--paper-item-icon-color:${accent};--state-icon-color:${accent};--mdc-theme-primary:${accent};`;
   }
@@ -1542,11 +1550,11 @@ export class ControlRoomDashboard extends LitElement {
     return html`<div class="settings-center cr-theme-studio">
       <button class="settings-back" @click=${()=>this.cancelCRTheme()}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>
       <div class="cr-room-visual-head"><div class="cr-room-kicker">CONTROLROOM · PERSONALISIERUNG</div><h2>Theme Studio</h2><p>Farben, Oberflächen und Home Assistant Themes für dein Dashboard.</p></div>
-      <h3>ControlRoom Farbwelten</h3><div class="cr-theme-grid">${this.crPalettes().map(p=>html`<button class="cr-theme-choice ${this.crTheme===p.id&&this.crThemeSource==="controlroom"?'chosen':''}" @click=${()=>{this.crTheme=p.id;this.crThemeSource="controlroom";}}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface}`}></i><i style=${`background:${p.surface}`}></i></span><strong>${p.name}</strong>${this.crTheme===p.id&&this.crThemeSource==="controlroom"?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
-      <h3>Visual Style</h3><div class="cr-theme-style-list">${([['glass','Glass Premium','Transparenz und weiche Glaseffekte'],['solid','Modern Solid','Klare, elegante Oberflächen'],['minimal','Minimal','Reduziert und kompakt']] as const).map(([id,title,desc])=>html`<button class=${this.crThemeStyle===id?'chosen':''} @click=${()=>this.crThemeStyle=id}><strong>${title}</strong><small>${desc}</small>${this.crThemeStyle===id?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
+      <h3>ControlRoom Farbwelten</h3><div class="cr-theme-grid">${this.crPalettes().map(p=>html`<button class="cr-theme-choice ${this.crTheme===p.id&&this.crThemeSource==="controlroom"?'chosen':''}" @click=${()=>{this.crTheme=p.id;this.crThemeSource="controlroom";this.requestUpdate();}}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface}`}></i><i style=${`background:${p.surface}`}></i></span><strong>${p.name}</strong>${this.crTheme===p.id&&this.crThemeSource==="controlroom"?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
+      <h3>Visual Style</h3><div class="cr-theme-style-list">${([['glass','Glass Premium','Transparenz und weiche Glaseffekte'],['solid','Modern Solid','Klare, elegante Oberflächen'],['minimal','Minimal','Reduziert und kompakt']] as const).map(([id,title,desc])=>html`<button class=${this.crThemeStyle===id?'chosen':''} @click=${()=>{this.crThemeStyle=id;this.requestUpdate();}}><strong>${title}</strong><small>${desc}</small>${this.crThemeStyle===id?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
       <h3>Home Assistant / HACS</h3><p class="settings-note">Folgt den Farbvariablen des aktiven Home Assistant Themes. Installierte HACS-Themes erscheinen nach dem Laden in Home Assistant.</p>
-      <label class="welcome-setting-row"><span>Theme-Quelle</span><select .value=${this.crThemeSource} @change=${(e:Event)=>this.crThemeSource=(e.target as HTMLSelectElement).value as "controlroom"|"ha"}><option value="controlroom">ControlRoom Themes</option><option value="ha">Home Assistant / HACS</option></select></label>
-      ${this.crThemeSource==="ha"?html`<label class="welcome-setting-row"><span>HA Theme (optional)</span><select .value=${this.crHATheme} @change=${(e:Event)=>this.crHATheme=(e.target as HTMLSelectElement).value}><option value="">Aktuelles Home Assistant Theme verwenden</option>${available.map(name=>html`<option value=${name}>${name}</option>`)}</select></label>`:nothing}
+      <label class="welcome-setting-row"><span>Theme-Quelle</span><select .value=${this.crThemeSource} @change=${(e:Event)=>{this.crThemeSource=(e.target as HTMLSelectElement).value as "controlroom"|"ha";this.requestUpdate();}}><option value="controlroom">ControlRoom Themes</option><option value="ha">Home Assistant / HACS</option></select></label>
+      ${this.crThemeSource==="ha"?html`<label class="welcome-setting-row"><span>HA Theme (optional)</span><select .value=${this.crHATheme} @change=${(e:Event)=>{this.crHATheme=(e.target as HTMLSelectElement).value;this.requestUpdate();}}><option value="">Aktuelles Home Assistant Theme verwenden</option>${available.map(name=>html`<option value=${name}>${name}</option>`)}</select></label>`:nothing}
       <div class="cr-theme-actions"><button @click=${()=>this.cancelCRTheme()}>Abbrechen</button><button @click=${()=>this.saveCRTheme()}>Speichern</button></div>
     </div>`;
   }
@@ -1647,7 +1655,7 @@ export class ControlRoomDashboard extends LitElement {
       const lights=entities.filter(e=>e.entity_id.startsWith("light."));
       const on=lights.filter(e=>e.state==="on").length;
       return html`<section class="cr-rooms-page">
-        <button class="cr-room-back" @click=${()=>{this.roomDetail="";this.roomImageEditor=false;}}>${this.renderIcon("mdi:arrow-left")} Alle Räume</button>
+        <button class="cr-room-back" type="button" @click=${(event:Event)=>{event.preventDefault();event.stopPropagation();this.roomDetail="";this.roomImageEditor=false;this.requestUpdate();}}>${this.renderIcon("mdi:arrow-left")} Alle Räume</button>
         <div class="cr-room-detail-head"><div><span class="cr-room-kicker">CONTROLROOM · RÄUME</span><h1>${name}</h1><p>${entities.length} Steuerungen · ${on} von ${lights.length} Lichtern an</p></div>
 </div>
 
@@ -1731,7 +1739,7 @@ export class ControlRoomDashboard extends LitElement {
     .cr-room-back ha-icon,.cr-room-image-edit ha-icon{--mdc-icon-size:17px}
     .cr-room-detail-head{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:23px;flex-wrap:wrap}
     .cr-room-detail-hero{display:grid;grid-template-columns:minmax(160px,1fr) minmax(170px,1fr);gap:22px;align-items:center;padding:20px;border-radius:22px;border:1px solid #ffffff20;background:linear-gradient(120deg,#33283e,#201a2b);margin-bottom:22px}
-    .cr-room-detail-art{height:230px;display:grid;place-items:center;border-radius:17px;overflow:hidden;background:radial-gradient(ellipse,#654875,#282032)}
+    .cr-room-detail-art{position:relative;min-width:0;height:230px;display:grid;place-items:center;border-radius:17px;overflow:hidden;background:radial-gradient(ellipse,#654875,#282032)}
     .cr-room-detail-art>ha-icon{--mdc-icon-size:115px;color:#d8bce7}
     .cr-room-detail-hero span{font-size:10px;letter-spacing:1.8px;color:#bba8c7}
     .cr-room-detail-hero h2{font-size:25px;margin:10px 0}
@@ -2699,7 +2707,37 @@ export class ControlRoomDashboard extends LitElement {
     .dashboard.cr-theme-minimal .overview-card{min-height:85px!important;padding:13px!important}
     .dashboard.cr-theme-minimal .settings-option{padding:11px!important}
     .dashboard.cr-theme-light .nav-item,.dashboard.cr-theme-light .settings-option,.dashboard.cr-theme-light .overview-card{color:var(--cr-text)!important}
+    /* V5: room art is always clipped inside its own positioned container. */
+    .dashboard .cr-room-detail-art{position:relative!important;isolation:isolate;width:100%;min-width:0;overflow:hidden!important;aspect-ratio:16/9;height:auto!important;max-height:300px}
+    .dashboard .cr-room-detail-art img{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;object-fit:cover!important;object-position:center!important;pointer-events:none!important}
+    .dashboard .cr-room-tile-art img{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;object-fit:cover!important;object-position:center!important;pointer-events:none!important}
+    .dashboard .cr-room-detail-hero{grid-template-columns:minmax(0,1.25fr) minmax(180px,.75fr);align-items:center;min-width:0}
+    .dashboard .cr-room-back{position:relative;z-index:5;pointer-events:auto;color:var(--cr-text)!important;border-color:color-mix(in srgb,var(--cr-text) 22%,transparent)!important}
+    .dashboard .cr-room-detail-hero span,.dashboard .cr-room-kicker{color:var(--cr-accent)!important}
+    .dashboard .cr-room-detail-hero p,.dashboard .cr-room-detail-head p{color:var(--cr-muted)!important}
+    .dashboard .cr-room-sections{position:relative;z-index:1}
+    .dashboard .cr-theme-choice strong,.dashboard .cr-theme-style-list strong,.dashboard .cr-theme-style-list small{color:var(--cr-text)!important}
+    @media(max-width:640px){.dashboard .cr-room-detail-hero{grid-template-columns:minmax(0,1fr)}}
     .dashboard.cr-theme-light .nav-item:not(.active) ha-icon{color:color-mix(in srgb,var(--cr-accent) 65%,var(--cr-text))!important}
+    /* V6: prevent art and device grids from escaping the room content area. */
+    .dashboard .cr-rooms-page{position:relative;min-width:0;max-width:100%;overflow:hidden;color:var(--cr-text)!important}
+    .dashboard .cr-room-detail-hero{position:relative;display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr)!important;gap:20px;max-width:100%;padding:16px!important}
+    .dashboard .cr-room-detail-art{position:relative!important;display:block!important;width:100%!important;height:148px!important;max-height:148px!important;aspect-ratio:auto!important;overflow:hidden!important}
+    .dashboard .cr-room-detail-art img{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important}
+    .dashboard .cr-room-sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));align-items:start;gap:12px;max-width:100%;min-width:0}
+    .dashboard .cr-room-section{min-width:0;max-width:100%;overflow:hidden}
+    .dashboard .cr-room-back{display:inline-flex;align-items:center;gap:6px;cursor:pointer;z-index:20!important;position:relative!important}
+    .dashboard .cr-room-detail-hero,.dashboard .cr-room-section,.dashboard .cr-room-device,.dashboard .cr-room-back{color:var(--cr-text)!important}
+    .dashboard .cr-theme-choice strong,.dashboard .cr-theme-style-list strong,.dashboard .cr-theme-style-list small{color:var(--cr-text)!important;opacity:1!important}
+    .dashboard .cr-theme-studio{color:var(--cr-text)!important}
+    .dashboard .cr-theme-studio .cr-theme-choice{border-color:color-mix(in srgb,var(--cr-text) 25%,transparent)!important}
+    .dashboard .cr-theme-studio .cr-theme-choice.chosen{border-color:var(--cr-accent)!important}
+    @media(max-width:640px){.dashboard .cr-room-detail-hero{grid-template-columns:minmax(0,1fr)!important}.dashboard .cr-room-detail-art{height:160px!important;max-height:160px!important}}
+    /* V6: use HA-selected palette throughout the internal ControlRoom shell. */
+    .dashboard{background:var(--cr-bg)!important;color:var(--cr-text)!important}
+    .dashboard .main,.dashboard .sidebar{color:var(--cr-text)!important}
+    .dashboard .nav-item.active,.dashboard .settings-option:hover{border-color:var(--cr-accent)!important}
+    .dashboard .cr-room-kicker,.dashboard .cr-rooms-heading p{color:var(--cr-muted)!important}
 
   `;
 
