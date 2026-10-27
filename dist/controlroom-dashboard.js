@@ -362,6 +362,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.config = {};
         this.activePage = "home";
         this.mobileMenuOpen = false;
+        this.settingsSection = "overview";
+        this.settingsSearch = "";
         this.currentTime = new Date();
         this.openLightColorId = "";
         this.showInlineBrightness = true;
@@ -792,10 +794,28 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         return { title, when: when || fallback };
     }
     renderWelcomeSettings() {
+        const section = this.settingsSection;
+        const categories = [
+            { id: "welcome", title: "Begrüßung & Personen", description: "Anrede, Profilbilder und Standorte", icon: "mdi:account-heart-outline", group: "Startseite" },
+            { id: "smartbar", title: "Smart Glass Bar", description: "Wetter, Uhr & Datum und Müllabfuhr", icon: "mdi:weather-partly-cloudy", group: "Startseite" },
+            { id: "appearance", title: "Darstellung", description: "Design und Personalisierung · in Vorbereitung", icon: "mdi:palette-outline", group: "Darstellung" },
+            { id: "devices", title: "Geräte & Bereiche", description: "Bereiche und Entitäten · in Vorbereitung", icon: "mdi:devices", group: "Geräte & Bereiche" },
+            { id: "system", title: "System", description: "Informationen und Verwaltung · in Vorbereitung", icon: "mdi:cog-outline", group: "System" }
+        ];
+        const matches = categories.filter(c => `${c.title} ${c.description} ${c.group}`.toLocaleLowerCase().includes(this.settingsSearch.toLocaleLowerCase().trim()));
+        if (section === "overview")
+            return b `<div class="settings-center">
+      <div class="settings-intro"><div class="eyebrow">CONTROLROOM</div><h1>Einstellungen</h1><p>Gestalte dein Zuhause, ganz nach deinen Wünschen.</p></div>
+      <label class="settings-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Einstellungen durchsuchen…" .value=${this.settingsSearch} @input=${(e) => { this.settingsSearch = e.target.value; }} aria-label="Einstellungen durchsuchen" /></label>
+      ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => b `<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c => c.group === group).map(c => b `<button class="settings-option" @click=${() => { this.settingsSection = c.id; }}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div></section>`) : b `<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
+      <p class="settings-local-note">Änderungen werden auf diesem Browser / Display gespeichert.</p>
+    </div>`;
+        if (section === "appearance" || section === "devices" || section === "system")
+            return b `<div class="settings-center"><button class="settings-back" @click=${() => { this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button><section class="welcome-settings"><div class="eyebrow">CONTROLROOM</div><h2>${categories.find(c => c.id === section)?.title}</h2><p>Dieser Bereich wird in einer späteren Etappe eingerichtet. Bestehende Einstellungen bleiben unverändert.</p></section></div>`;
         const candidates = this.getWasteCandidates().filter(e => this.wasteSource === "auto" || e.entity_id.startsWith(`${this.wasteSource}.`));
         const wasteInfo = this.getWasteInfo();
-        return b `<div class="settings-stack">
-      <section class="welcome-settings">
+        return b `<div class="settings-stack"><button class="settings-back" @click=${() => { this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>
+      ${section === "welcome" ? b `<section class="welcome-settings">
         <div class="eyebrow">Startseite</div><h2>Begrüßung & Personen</h2>
         <p>Personalisierung dieses Browsers / Displays</p>
         <label class="welcome-setting-row"><span>Begrüßungsmodus</span>
@@ -814,8 +834,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
           <input type="text" .value=${this.welcomeEyebrow || this.t("homeLabel")} @change=${(e) => { this.welcomeEyebrow = e.target.value; this.saveWelcome(); }} /></label>
         <label class="welcome-setting-text">Untertitel
           <input type="text" .value=${this.welcomeSubtitle || this.t("subtitle")} @change=${(e) => { this.welcomeSubtitle = e.target.value; this.saveWelcome(); }} /></label>
-      </section>
-      <section class="welcome-settings">
+      </section>` : A}
+      ${section === "smartbar" ? b `<section class="welcome-settings">
         <div class="eyebrow">Startseite</div><h2>Smart Glass Bar</h2>
         <p>Wetter, Uhr und Müllabfuhr · pro Browser / Display gespeichert</p>
         ${[
@@ -848,7 +868,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             <option value="both">Beides · Morgen · 28. Okt.</option>
           </select></label>
         <p class="settings-note">${wasteInfo ? `Vorschau: ${wasteInfo.title} · ${wasteInfo.when}` : "Noch keine gültigen Abholdaten. Der Eintrag bleibt in der Smart Bar verborgen."}</p>
-      </section>
+      </section>` : A}
     </div>`;
     }
     renderSmartBar() {
@@ -2037,6 +2057,27 @@ ControlRoomDashboard.styles = i$3 `
     @media (prefers-reduced-motion: reduce) {
       .weather-icon { animation: none; }
     }
+    .settings-center {display:grid;gap:24px;max-width:820px;width:100%;min-width:0}
+    .settings-intro h1 {font-size:clamp(27px,4vw,38px);letter-spacing:-.045em;margin:9px 0 6px;color:#f7eefc}
+    .settings-intro p,.settings-local-note,.settings-empty {font-size:13px;color:#b4a5c4;margin:0}
+    .settings-search {display:flex;align-items:center;gap:12px;padding:12px 15px;border-radius:15px;background:rgba(255,255,255,.045);border:1px solid rgba(213,174,239,.15);color:#cbb6dc}
+    .settings-search ha-icon {--mdc-icon-size:20px}
+    .settings-search input {background:transparent;border:0;outline:0;color:#f7eefc;font:inherit;width:100%;min-width:0}
+    .settings-search input::placeholder {color:#9f91ad}
+    .settings-category {display:grid;gap:11px;min-width:0}
+    .settings-category h2 {font-size:13px;font-weight:700;color:#b9a7c9;margin:0 0 2px 3px}
+    .settings-options {display:grid;gap:9px}
+    .settings-option {display:flex;align-items:center;text-align:left;gap:14px;width:100%;min-width:0;padding:16px;border:1px solid rgba(213,174,239,.14);border-radius:17px;background:rgba(255,255,255,.035);color:#e9dff0;cursor:pointer;font:inherit;transition:background .15s,border-color .15s}
+    .settings-option:hover,.settings-option:focus-visible {background:rgba(161,112,198,.14);border-color:rgba(213,174,239,.36)}
+    .settings-option-icon {display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:13px;background:rgba(174,121,214,.16);color:#d9b9f3}
+    .settings-option-icon ha-icon {--mdc-icon-size:22px}
+    .settings-option-copy {display:grid;gap:4px;min-width:0;flex:1}
+    .settings-option-copy strong {font-size:14px;font-weight:650}
+    .settings-option-copy small {font-size:11px;color:#aa9bb8;line-height:1.5}
+    .settings-option>ha-icon {--mdc-icon-size:18px;color:#9f8cae}
+    .settings-back {display:flex;align-items:center;gap:8px;justify-self:start;padding:8px 0;border:0;background:transparent;color:#cbb2df;font:inherit;font-size:13px;cursor:pointer}
+    .settings-back ha-icon {--mdc-icon-size:18px}
+    @media(max-width:650px){.settings-center{gap:19px}.settings-option{padding:13px;gap:11px}.settings-option-icon{flex-basis:38px;width:38px;height:38px}}
     .settings-stack {display:grid;gap:18px;max-width:740px}
     .settings-stack .welcome-settings {max-width:none}
     .settings-subheading {font-size:13px;font-weight:700;color:#e6d5f4;margin-top:25px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)}
@@ -2118,6 +2159,12 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "mobileMenuOpen", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "settingsSection", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "settingsSearch", void 0);
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "currentTime", void 0);
