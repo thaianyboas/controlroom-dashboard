@@ -1625,8 +1625,16 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
     crThemeVars() {
         const p = this.crPalettes().find(p => p.id === this.crTheme) || this.crPalettes()[0];
+        const themes = this.hass?.themes?.themes || {};
+        const chosen = this.crHATheme && this.crThemeSource === "ha" ? themes[this.crHATheme] : undefined;
+        const fromHA = (key, fallback) => chosen?.[key] || `var(--${key}, ${fallback})`;
         const ha = this.crThemeSource === "ha";
-        return `--cr-accent:${ha ? 'var(--primary-color, #a477f5)' : p.accent};--cr-bg:${ha ? 'var(--primary-background-color, #111019)' : p.bg};--cr-surface:${ha ? 'var(--card-background-color, #282037)' : p.surface};--cr-text:${ha ? 'var(--primary-text-color, #f6f3fb)' : p.text};--cr-radius:${this.crThemeStyle === "minimal" ? '8px' : this.crThemeStyle === "solid" ? '14px' : '22px'};--cr-blur:${this.crThemeStyle === "glass" ? 'blur(18px)' : 'none'};`;
+        const accent = ha ? fromHA("primary-color", p.accent) : p.accent;
+        const bg = ha ? fromHA("primary-background-color", p.bg) : p.bg;
+        const surface = ha ? fromHA("card-background-color", p.surface) : p.surface;
+        const text = ha ? fromHA("primary-text-color", p.text) : p.text;
+        const muted = ha ? fromHA("secondary-text-color", "#bcb1c8") : "#bcb1c8";
+        return `--cr-accent:${accent};--cr-bg:${bg};--cr-surface:${surface};--cr-text:${text};--cr-muted:${muted};--cr-radius:${this.crThemeStyle === "minimal" ? '8px' : this.crThemeStyle === "solid" ? '14px' : '22px'};--cr-blur:${this.crThemeStyle === "glass" ? 'blur(18px)' : 'none'};`;
     }
     crAvailableHAThemes() {
         const themes = this.hass?.themes?.themes;
@@ -1646,9 +1654,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         catch (error) {
             console.warn(error);
         }
-        if (this.crThemeSource === "ha" && this.crHATheme) {
-            void this.hass?.callService?.("frontend", "set_theme", { name: this.crHATheme }).catch(e => console.warn("ControlRoom: HA theme selection", e));
-        }
+        // External theme colors are applied locally; do not change the HA theme for other dashboards.
         this.crThemeSnapshot = JSON.stringify(this.crThemeData());
         this.settingsSection = "overview";
     }
@@ -1666,9 +1672,9 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     </div>`;
     }
     roomKind(name) {
-        const n = name.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const n = name.toLocaleLowerCase().replace(/([a-z])([A-Z])/g, "$1 $2").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         const rules = [
-            ["gastezimmer", /gastezimmer|gästezimmer|guest room|quarto de hospedes/], ["kinderzimmer", /kinderzimmer|kids room|nursery|quarto infantil/], ["fitnessraum", /fitnessraum|fitness room|gym|academia/], ["controlraum", /controlraum|control room|technikraum|technical room|sala tecnica|sala de controle|serverraum|server room|hauszentrale|smart home hub/], ["pooltechnik", /pooltechnik|piscina tecnica|pumpenraum|pool equipment|pool plant/], ["heizungsraum", /heizungsraum|heizraum|boiler room|heating room|sala de aquecimento/], ["solartechnik", /solartechnik|solar room|pv technik|photovoltaik|inverterraum|sala solar/], ["wintergarten", /wintergarten|conservatory|jardim de inverno/], ["terrasse", /terrasse|terrace|terraco|patio/], ["pool", /pool|piscina|schwimmbad|swimming/], ["garten", /garten|garden|jardim|quintal/], ["wohnzimmer", /wohn|living|lounge|sala/], ["schlafzimmer", /schlaf|bedroom|quarto/],
+            ["gastezimmer", /gastezimmer|gästezimmer|guest room|quarto de hospedes/], ["kinderzimmer", /kinderzimmer|kids room|nursery|quarto infantil/], ["fitnessraum", /fitnessraum|fitness room|gym|academia/], ["controlraum", /controlraum|controlroom|control room|technikraum|technical room|sala tecnica|sala de controle|serverraum|server room|hauszentrale|smart home hub/], ["pooltechnik", /pooltechnik|piscina tecnica|pumpenraum|pool equipment|pool plant/], ["heizungsraum", /heizungsraum|heizraum|boiler room|heating room|sala de aquecimento/], ["solartechnik", /solartechnik|solar room|pv technik|photovoltaik|inverterraum|sala solar/], ["wintergarten", /wintergarten|conservatory|jardim de inverno/], ["terrasse", /terrasse|terrace|terraco|patio/], ["pool", /pool|piscina|schwimmbad|swimming/], ["garten", /garten|garden|jardim|quintal/], ["wohnzimmer", /wohn|living|lounge|sala/], ["schlafzimmer", /schlaf|bedroom|quarto/],
             ["kuche", /kuche|kitchen|cozinha/], ["badezimmer", /bad|bath|banho|wc|toilet/],
             ["esszimmer", /esszimmer|dining|jantar/], ["balkon", /balkon|balcon/],
             ["flur", /flur|hall|eingang|corredor|foyer/], ["buro", /buro|office|escritorio|arbeitszimmer/],
@@ -1688,12 +1694,16 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const selected = automatic && Math.floor(this.currentTime.getTime() / 86400000) % 2 === 1 ? (mode === "3d" ? "photos" : "3d") : mode;
         const kind = this.roomKind(name);
         const fallback = `/local/controlroom-dashboard/controlroom-rooms-complete-assets/rooms/${kind}.webp`;
+        const genericFallback = `/local/controlroom-dashboard/controlroom-rooms-complete-assets/rooms/wohnzimmer.webp`;
         const photoKinds = { pooltechnik: "heizungsraum", solartechnik: "controlraum", wintergarten: "terrasse", generic: "wohnzimmer", esszimmer: "esszimmer" };
         const photoKind = photoKinds[kind] || kind;
         const premiumPhoto = `/local/controlroom-dashboard/controlroom-premium-fotos-20-ambientes/controlroom-premium-fotos/${photoKind}.webp`;
         const image = selected === "custom" ? (own || fallback) : selected === "photos" ? (this.roomPhotoUrls[kind] || premiumPhoto) : fallback;
-        return image ? b `<img src=${image} alt=${name} loading="lazy" @error=${(e) => { const el = e.target; if (!el.src.endsWith(`/${kind}.webp`) || !el.src.includes("complete-assets")) {
+        return image ? b `<img class=${selected === "3d" ? "cr-art-3d" : "cr-art-photo"} src=${image} alt=${name} loading="lazy" @error=${(e) => { const el = e.target; if (!el.src.includes("complete-assets")) {
             el.src = fallback;
+        }
+        else if (!el.src.endsWith("/wohnzimmer.webp")) {
+            el.src = genericFallback;
         }
         else {
             el.style.display = "none";
@@ -2828,6 +2838,26 @@ ControlRoomDashboard.styles = i$3 `
       .smart-bar .smart-part:has(.smart-waste) { grid-column: auto; }
     }
 
+
+    /* Theme Studio v2: global palette, not just the navigation */
+    .dashboard{background:radial-gradient(ellipse at 65% 0%,color-mix(in srgb,var(--cr-accent) 12%,transparent),transparent 50%),var(--cr-bg)!important;color:var(--cr-text)!important}
+    .dashboard .sidebar{background:color-mix(in srgb,var(--cr-surface) 75%,var(--cr-bg))!important;border-right-color:color-mix(in srgb,var(--cr-accent) 22%,transparent)!important}
+    .dashboard .main{background:transparent!important;color:var(--cr-text)!important}
+    .dashboard .brand-symbol{background:linear-gradient(135deg,var(--cr-accent),color-mix(in srgb,var(--cr-accent) 45%,#17131c))!important;color:#fff!important;box-shadow:0 8px 24px color-mix(in srgb,var(--cr-accent) 22%,transparent)!important}
+    .dashboard .nav-item.active,.dashboard .settings-option:hover{background:color-mix(in srgb,var(--cr-accent) 23%,var(--cr-surface))!important;border-color:color-mix(in srgb,var(--cr-accent) 50%,transparent)!important}
+    .dashboard .nav-item.active ha-icon,.dashboard .nav-item:hover ha-icon{color:var(--cr-accent)!important}
+    .dashboard .page-heading,.dashboard .brand-name,.dashboard .cr-rooms-heading h1,.dashboard .cr-room-tile-body h2,.dashboard .cr-room-visual-head h2,.dashboard .settings-center h2,.dashboard .settings-center h3{color:var(--cr-text)!important}
+    .dashboard .brand-subtitle,.dashboard .cr-room-tile-body p,.dashboard .cr-room-tile-footer,.dashboard .cr-room-visual-head p,.dashboard .settings-note{color:var(--cr-muted)!important}
+    .dashboard .smart-bar,.dashboard .overview-card,.dashboard .cr-room-tile,.dashboard .cr-room-section,.dashboard .settings-option,.dashboard .cr-room-detail-hero{background:color-mix(in srgb,var(--cr-surface) 84%,transparent)!important;border-color:color-mix(in srgb,var(--cr-accent) 19%,transparent)!important;color:var(--cr-text)!important}
+    .dashboard .smart-bar{background:color-mix(in srgb,var(--cr-surface) 90%,transparent)!important}
+    .dashboard .cr-room-tile-art{background:color-mix(in srgb,var(--cr-surface) 76%,var(--cr-bg))!important}
+    .dashboard .cr-room-tile-art img.cr-art-3d,.dashboard .cr-room-detail-art img.cr-art-3d{object-fit:contain!important;object-position:center!important;filter:none!important}
+    .dashboard .cr-room-tile-art img.cr-art-photo,.dashboard .cr-room-detail-art img.cr-art-photo{object-fit:cover!important;object-position:center!important;filter:none!important}
+    .dashboard .cr-room-tile-art:after{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--cr-bg) 28%,transparent))!important}
+    .dashboard .cr-theme-choice.chosen,.dashboard .cr-theme-style-list button.chosen{border-color:var(--cr-accent)!important}
+    .dashboard.cr-theme-solid .smart-bar,.dashboard.cr-theme-solid .cr-room-tile{backdrop-filter:none!important;background:var(--cr-surface)!important}
+    .dashboard.cr-theme-minimal .smart-bar,.dashboard.cr-theme-minimal .cr-room-tile{box-shadow:none!important;backdrop-filter:none!important}
+    .dashboard.cr-theme-light .cr-room-tile-body,.dashboard.cr-theme-light .settings-option{color:var(--cr-text)!important}
   `;
 __decorate([
     n({ attribute: false })
