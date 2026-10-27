@@ -133,6 +133,11 @@ const translations = {
         waiting: "Waiting for Home Assistant",
         homeLabel: "Your home",
         people: "People",
+        peopleEmpty: "No people registered yet",
+        atHome: "Home",
+        away: "Away",
+        locationUnknown: "Location unknown",
+        peopleCount: "people",
         lights: "Lights",
         climate: "Climate",
         comingSoon: "This section is being prepared.",
@@ -177,6 +182,11 @@ const translations = {
         waiting: "Warte auf Home Assistant",
         homeLabel: "Dein Zuhause",
         people: "Personen",
+        peopleEmpty: "Noch keine Personen registriert",
+        atHome: "Zuhause",
+        away: "Abwesend",
+        locationUnknown: "Standort unbekannt",
+        peopleCount: "Personen",
         lights: "Lichter",
         climate: "Klima",
         comingSoon: "Dieser Bereich wird vorbereitet.",
@@ -221,6 +231,11 @@ const translations = {
         waiting: "Aguardando o Home Assistant",
         homeLabel: "Sua casa",
         people: "Pessoas",
+        peopleEmpty: "Nenhuma pessoa cadastrada",
+        atHome: "Em casa",
+        away: "Ausente",
+        locationUnknown: "Localização desconhecida",
+        peopleCount: "pessoas",
         lights: "Luzes",
         climate: "Climatização",
         comingSoon: "Estamos preparando esta seção.",
@@ -415,6 +430,69 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       </div>
     `;
     }
+    getPeople() {
+        return Object.values(this.hass?.states ?? {})
+            .filter((entity) => entity.entity_id.startsWith("person."))
+            .sort((a, b) => this.getPersonName(a).localeCompare(this.getPersonName(b), this.getLanguage()));
+    }
+    getPersonName(person) {
+        const name = person.attributes.friendly_name;
+        return typeof name === "string" && name.trim()
+            ? name
+            : person.entity_id.substring("person.".length).replace(/_/g, " ");
+    }
+    getPersonLocation(person) {
+        switch (person.state) {
+            case "home": return this.t("atHome");
+            case "not_home": return this.t("away");
+            case "unknown":
+            case "unavailable": return this.t("locationUnknown");
+            default: return person.state || this.t("locationUnknown");
+        }
+    }
+    renderPeopleCard() {
+        const people = this.getPeople();
+        return b `
+      <article class="overview-card people-card">
+        <div class="people-card-heading">
+          <div class="card-icon">${this.renderIcon("mdi:account-group-outline")}</div>
+          <span class="people-count">${people.length}</span>
+        </div>
+        <div class="card-title">${this.t("people")}</div>
+        ${people.length ? b `
+          <div class="people-list">
+            ${people.map((person) => {
+            const picture = person.attributes.entity_picture;
+            const hasPicture = typeof picture === "string" &&
+                (picture.startsWith("/") || picture.startsWith("https://") ||
+                    picture.startsWith("http://"));
+            const isHome = person.state === "home";
+            return b `
+                <div class="person-row">
+                  <div class="person-avatar">
+                    ${hasPicture
+                ? b `<img src=${picture} alt=${this.getPersonName(person)} loading="lazy" />`
+                : b `<span>${this.getPersonName(person).charAt(0).toUpperCase()}</span>`}
+                    <span class="person-presence ${isHome ? "is-home" : ""}"></span>
+                  </div>
+                  <div class="person-info">
+                    <div class="person-name">${this.getPersonName(person)}</div>
+                    <div class="person-location">${this.renderIcon(isHome
+                ? "mdi:home-outline"
+                : person.state === "not_home"
+                    ? "mdi:map-marker-off-outline"
+                    : "mdi:map-marker-outline")}
+                      <span>${this.getPersonLocation(person)}</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+        })}
+          </div>
+        ` : b `<div class="card-subtitle">${this.t("peopleEmpty")}</div>`}
+      </article>
+    `;
+    }
     renderSidebar() {
         return b `
       <aside class="sidebar ${this.mobileMenuOpen ? "open" : ""}">
@@ -468,7 +546,6 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
     renderHome() {
         const cards = [
-            { key: "people", icon: "mdi:account-group-outline" },
             { key: "energy", icon: "mdi:lightning-bolt" },
             { key: "rooms", icon: "mdi:floor-plan" },
             { key: "lights", icon: "mdi:lightbulb-outline" },
@@ -487,6 +564,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       </section>
 
       <section class="overview-grid">
+        ${this.renderPeopleCard()}
         ${cards.map((card) => b `
             <article class="overview-card">
               <div class="card-icon">
@@ -913,6 +991,91 @@ ControlRoomDashboard.styles = i$3 `
       margin-top: 6px;
       font-size: 12px;
       color: #9993a7;
+    }
+
+
+    .people-card {
+      justify-content: flex-start;
+      gap: 10px;
+    }
+    .people-card-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .people-count {
+      border: 1px solid rgba(195, 162, 227, 0.24);
+      background: rgba(164, 117, 203, 0.15);
+      color: #dfc9f3;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .people-list {
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      margin-top: 5px;
+    }
+    .person-row {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+    .person-avatar {
+      position: relative;
+      display: grid;
+      place-items: center;
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: #6d557e;
+      color: #fff;
+      font-weight: 700;
+    }
+    .person-avatar img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+    }
+    .person-presence {
+      position: absolute;
+      right: -1px;
+      bottom: -1px;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #24202e;
+      border-radius: 50%;
+      background: #8c8696;
+    }
+    .person-presence.is-home { background: #48d9a4; }
+    .person-info { min-width: 0; }
+    .person-name {
+      font-size: 13px;
+      font-weight: 650;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .person-location {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 4px;
+      color: #b8aec7;
+      font-size: 11px;
+      min-width: 0;
+    }
+    .person-location ha-icon { --mdc-icon-size: 14px; }
+    .person-location span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .placeholder-page {
