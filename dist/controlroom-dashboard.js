@@ -27,6 +27,47 @@ typeof SuppressedError === "function" ? SuppressedError : function (error, suppr
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 };
 
+class ControlRoomDashboardStrategy extends HTMLElement {
+    static getCreateSuggestions() {
+        return {
+            title: "ControlRoom",
+            icon: "mdi:home-automation"
+        };
+    }
+    static async generate(config, _hass) {
+        return {
+            title: config.title || "ControlRoom",
+            views: [
+                {
+                    title: "ControlRoom",
+                    path: "home",
+                    type: "panel",
+                    icon: "mdi:home-automation",
+                    cards: [
+                        {
+                            type: "custom:controlroom-dashboard"
+                        }
+                    ]
+                }
+            ]
+        };
+    }
+}
+ControlRoomDashboardStrategy.noEditor = true;
+if (!customElements.get("ll-strategy-dashboard-controlroom")) {
+    customElements.define("ll-strategy-dashboard-controlroom", ControlRoomDashboardStrategy);
+}
+window.customStrategies = window.customStrategies || [];
+if (!window.customStrategies.some((strategy) => strategy.type === "controlroom")) {
+    window.customStrategies.push({
+        type: "controlroom",
+        strategyType: "dashboard",
+        name: "ControlRoom Dashboard",
+        description: "Premium intelligent smart home dashboard with automatic Home Assistant integration.",
+        documentationURL: "https://github.com/thaianyboas/controlroom-dashboard"
+    });
+}
+
 /**
  * @license
  * Copyright 2019 Google LLC
