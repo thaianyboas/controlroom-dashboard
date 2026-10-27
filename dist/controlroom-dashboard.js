@@ -128,24 +128,35 @@ const translations = {
         morning: "Good morning",
         afternoon: "Good afternoon",
         evening: "Good evening",
-        welcome: "Welcome home",
         subtitle: "Your intelligent home, beautifully connected.",
         connected: "Home Assistant connected",
         waiting: "Waiting for Home Assistant",
         homeLabel: "Your home",
-        overview: "Overview",
         people: "People",
         lights: "Lights",
         climate: "Climate",
         comingSoon: "This section is being prepared.",
-        foundation: "Your smart home at a glance",
         brandSubtitle: "Home Assistant",
-        status: "System status",
         online: "Connected",
         offline: "Waiting",
         navigation: "Navigation",
         menu: "Open menu",
-        closeMenu: "Close menu"
+        weatherUnavailable: "Weather unavailable",
+        clearNight: "Clear night",
+        cloudy: "Cloudy",
+        exceptional: "Exceptional",
+        fog: "Foggy",
+        hail: "Hail",
+        lightning: "Thunderstorm",
+        lightningRainy: "Thunderstorm with rain",
+        partlycloudy: "Partly cloudy",
+        pouring: "Pouring rain",
+        rainy: "Rainy",
+        snowy: "Snowy",
+        snowyRainy: "Snow and rain",
+        sunny: "Sunny",
+        windy: "Windy",
+        windyVariant: "Windy and cloudy"
     },
     de: {
         home: "Startseite",
@@ -161,24 +172,35 @@ const translations = {
         morning: "Guten Morgen",
         afternoon: "Guten Tag",
         evening: "Guten Abend",
-        welcome: "Willkommen zu Hause",
         subtitle: "Dein intelligentes Zuhause. Alles verbunden.",
         connected: "Mit Home Assistant verbunden",
         waiting: "Warte auf Home Assistant",
         homeLabel: "Dein Zuhause",
-        overview: "Übersicht",
         people: "Personen",
         lights: "Lichter",
         climate: "Klima",
         comingSoon: "Dieser Bereich wird vorbereitet.",
-        foundation: "Dein Smart Home im Überblick",
         brandSubtitle: "Home Assistant",
-        status: "Systemstatus",
         online: "Verbunden",
         offline: "Warten",
         navigation: "Navigation",
         menu: "Menü öffnen",
-        closeMenu: "Menü schließen"
+        weatherUnavailable: "Wetter nicht verfügbar",
+        clearNight: "Klare Nacht",
+        cloudy: "Bewölkt",
+        exceptional: "Extremwetter",
+        fog: "Nebelig",
+        hail: "Hagel",
+        lightning: "Gewitter",
+        lightningRainy: "Gewitter mit Regen",
+        partlycloudy: "Teilweise bewölkt",
+        pouring: "Starkregen",
+        rainy: "Regnerisch",
+        snowy: "Schnee",
+        snowyRainy: "Schneeregen",
+        sunny: "Sonnig",
+        windy: "Windig",
+        windyVariant: "Windig und bewölkt"
     },
     pt: {
         home: "Início",
@@ -194,24 +216,35 @@ const translations = {
         morning: "Bom dia",
         afternoon: "Boa tarde",
         evening: "Boa noite",
-        welcome: "Bem-vindo à sua casa",
         subtitle: "Sua casa inteligente, perfeitamente conectada.",
         connected: "Conectado ao Home Assistant",
         waiting: "Aguardando o Home Assistant",
         homeLabel: "Sua casa",
-        overview: "Visão geral",
         people: "Pessoas",
         lights: "Luzes",
         climate: "Climatização",
         comingSoon: "Estamos preparando esta seção.",
-        foundation: "Sua casa inteligente em um só lugar",
         brandSubtitle: "Home Assistant",
-        status: "Status do sistema",
         online: "Conectado",
         offline: "Aguardando",
         navigation: "Navegação",
         menu: "Abrir menu",
-        closeMenu: "Fechar menu"
+        weatherUnavailable: "Tempo indisponível",
+        clearNight: "Noite limpa",
+        cloudy: "Nublado",
+        exceptional: "Tempo extremo",
+        fog: "Neblina",
+        hail: "Granizo",
+        lightning: "Tempestade",
+        lightningRainy: "Tempestade com chuva",
+        partlycloudy: "Parcialmente nublado",
+        pouring: "Chuva forte",
+        rainy: "Chuvoso",
+        snowy: "Nevando",
+        snowyRainy: "Neve e chuva",
+        sunny: "Ensolarado",
+        windy: "Ventando",
+        windyVariant: "Ventando e nublado"
     }
 };
 const pages = [
@@ -226,6 +259,40 @@ const pages = [
     { id: "calendar", icon: "mdi:calendar-month-outline" },
     { id: "settings", icon: "mdi:cog-outline" }
 ];
+const weatherIcons = {
+    "clear-night": "mdi:weather-night",
+    cloudy: "mdi:weather-cloudy",
+    exceptional: "mdi:alert-circle-outline",
+    fog: "mdi:weather-fog",
+    hail: "mdi:weather-hail",
+    lightning: "mdi:weather-lightning",
+    "lightning-rainy": "mdi:weather-lightning-rainy",
+    partlycloudy: "mdi:weather-partly-cloudy",
+    pouring: "mdi:weather-pouring",
+    rainy: "mdi:weather-rainy",
+    snowy: "mdi:weather-snowy",
+    "snowy-rainy": "mdi:weather-snowy-rainy",
+    sunny: "mdi:weather-sunny",
+    windy: "mdi:weather-windy",
+    "windy-variant": "mdi:weather-windy-variant"
+};
+const weatherKeys = {
+    "clear-night": "clearNight",
+    cloudy: "cloudy",
+    exceptional: "exceptional",
+    fog: "fog",
+    hail: "hail",
+    lightning: "lightning",
+    "lightning-rainy": "lightningRainy",
+    partlycloudy: "partlycloudy",
+    pouring: "pouring",
+    rainy: "rainy",
+    snowy: "snowy",
+    "snowy-rainy": "snowyRainy",
+    sunny: "sunny",
+    windy: "windy",
+    "windy-variant": "windyVariant"
+};
 let ControlRoomDashboard = class ControlRoomDashboard extends i {
     constructor() {
         super(...arguments);
@@ -286,12 +353,67 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             month: "short"
         }).format(this.currentTime);
     }
+    getWeather() {
+        const states = this.hass?.states;
+        if (!states)
+            return undefined;
+        const configured = this.config.weather_entity;
+        if (configured)
+            return states[configured];
+        const candidates = Object.values(states).filter((entity) => entity.entity_id.startsWith("weather.") &&
+            entity.state !== "unknown" &&
+            entity.state !== "unavailable");
+        return candidates[0];
+    }
+    getWeatherTemperature(weather) {
+        const raw = weather.attributes.temperature;
+        if (typeof raw !== "number" || !Number.isFinite(raw)) {
+            return "—";
+        }
+        const unit = weather.attributes.temperature_unit;
+        const displayUnit = typeof unit === "string"
+            ? unit
+            : this.hass?.config?.unit_system?.temperature || "°C";
+        return `${Math.round(raw)} ${displayUnit}`;
+    }
+    getWeatherDescription(condition) {
+        const key = weatherKeys[condition];
+        return key ? this.t(key) : condition.replace(/-/g, " ");
+    }
     navigate(page) {
         this.activePage = page;
         this.mobileMenuOpen = false;
     }
     renderIcon(icon) {
         return b `<ha-icon .icon=${icon}></ha-icon>`;
+    }
+    renderWeather() {
+        const weather = this.getWeather();
+        if (!weather) {
+            return b `
+        <div class="weather weather-empty">
+          ${this.renderIcon("mdi:weather-cloudy-alert")}
+          <span>${this.t("weatherUnavailable")}</span>
+        </div>
+      `;
+        }
+        const icon = weatherIcons[weather.state] ||
+            "mdi:weather-cloudy";
+        return b `
+      <div class="weather" title=${weather.entity_id}>
+        <div class="weather-icon">
+          ${this.renderIcon(icon)}
+        </div>
+        <div class="weather-details">
+          <div class="weather-temp">
+            ${this.getWeatherTemperature(weather)}
+          </div>
+          <div class="weather-condition">
+            ${this.getWeatherDescription(weather.state)}
+          </div>
+        </div>
+      </div>
+    `;
     }
     renderSidebar() {
         return b `
@@ -337,9 +459,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             </div>
             <div class="user-status">
               <span class="small-dot"></span>
-              ${this.hass
-            ? this.t("online")
-            : this.t("offline")}
+              ${this.hass ? this.t("online") : this.t("offline")}
             </div>
           </div>
         </div>
@@ -373,9 +493,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
                 ${this.renderIcon(card.icon)}
               </div>
               <div>
-                <div class="card-title">
-                  ${this.t(card.key)}
-                </div>
+                <div class="card-title">${this.t(card.key)}</div>
                 <div class="card-subtitle">
                   ${this.t("comingSoon")}
                 </div>
@@ -386,16 +504,13 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     `;
     }
     renderPage() {
-        if (this.activePage === "home") {
+        if (this.activePage === "home")
             return this.renderHome();
-        }
         const page = pages.find((item) => item.id === this.activePage);
         return b `
       <section class="placeholder-page">
         <div class="placeholder-icon">
-          ${page
-            ? this.renderIcon(page.icon)
-            : A}
+          ${page ? this.renderIcon(page.icon) : A}
         </div>
         <h1>${this.t(this.activePage)}</h1>
         <p>${this.t("comingSoon")}</p>
@@ -421,20 +536,17 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
               >
                 ${this.renderIcon("mdi:menu")}
               </button>
-
               <div class="page-heading">
                 ${this.t(this.activePage)}
               </div>
             </div>
 
             <div class="topbar-right">
+              ${this.renderWeather()}
+
               <div class="clock">
-                <div class="clock-time">
-                  ${this.getTime()}
-                </div>
-                <div class="clock-date">
-                  ${this.getDate()}
-                </div>
+                <div class="clock-time">${this.getTime()}</div>
+                <div class="clock-date">${this.getDate()}</div>
               </div>
 
               <div class="connection">
@@ -461,13 +573,8 @@ ControlRoomDashboard.styles = i$3 `
         "Segoe UI", sans-serif;
     }
 
-    * {
-      box-sizing: border-box;
-    }
-
-    button {
-      font: inherit;
-    }
+    * { box-sizing: border-box; }
+    button { font: inherit; }
 
     .dashboard {
       display: flex;
@@ -491,12 +598,11 @@ ControlRoomDashboard.styles = i$3 `
       width: 250px;
       min-width: 250px;
       padding: 27px 17px 20px;
-      background:
-        linear-gradient(
-          180deg,
-          rgba(112, 82, 139, 0.13),
-          rgba(255,255,255,0.015)
-        );
+      background: linear-gradient(
+        180deg,
+        rgba(112, 82, 139, 0.13),
+        rgba(255,255,255,0.015)
+      );
       border-right: 1px solid rgba(255,255,255,0.08);
     }
 
@@ -513,14 +619,10 @@ ControlRoomDashboard.styles = i$3 `
       width: 43px;
       height: 43px;
       border-radius: 14px;
-      background: linear-gradient(
-        135deg,
-        #a37cc5,
-        #684c84
-      );
+      background: linear-gradient(135deg, #a37cc5, #684c84);
       font-size: 25px;
       font-weight: 700;
-      box-shadow: 0 8px 24px rgba(140, 96, 181, 0.2);
+      box-shadow: 0 8px 24px rgba(140,96,181,0.2);
     }
 
     .brand-name {
@@ -564,9 +666,7 @@ ControlRoomDashboard.styles = i$3 `
       transition: background 180ms, color 180ms;
     }
 
-    .nav-item ha-icon {
-      --mdc-icon-size: 22px;
-    }
+    .nav-item ha-icon { --mdc-icon-size: 22px; }
 
     .nav-item:hover {
       background: rgba(255,255,255,0.06);
@@ -577,10 +677,10 @@ ControlRoomDashboard.styles = i$3 `
       color: white;
       background: linear-gradient(
         110deg,
-        rgba(168, 125, 197, 0.4),
-        rgba(115, 79, 149, 0.23)
+        rgba(168,125,197,0.4),
+        rgba(115,79,149,0.23)
       );
-      border-color: rgba(213, 174, 239, 0.35);
+      border-color: rgba(213,174,239,0.35);
       box-shadow:
         inset 0 1px rgba(255,255,255,0.13),
         0 5px 18px rgba(0,0,0,0.12);
@@ -606,9 +706,7 @@ ControlRoomDashboard.styles = i$3 `
       font-weight: 700;
     }
 
-    .user-details {
-      min-width: 0;
-    }
+    .user-details { min-width: 0; }
 
     .user-name {
       font-size: 13px;
@@ -666,11 +764,17 @@ ControlRoomDashboard.styles = i$3 `
       gap: 12px;
     }
 
-    .clock {
-      padding: 10px 17px;
-      border-radius: 15px;
+    .clock, .weather {
+      min-height: 72px;
+      padding: 12px 17px;
+      border-radius: 17px;
       background: rgba(255,255,255,0.055);
       border: 1px solid rgba(255,255,255,0.075);
+      backdrop-filter: blur(16px);
+    }
+
+    .clock {
+      min-width: 94px;
       text-align: right;
     }
 
@@ -681,9 +785,54 @@ ControlRoomDashboard.styles = i$3 `
     }
 
     .clock-date {
-      margin-top: 2px;
+      margin-top: 4px;
       font-size: 11px;
       color: #a9a3b5;
+    }
+
+    .weather {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      min-width: 165px;
+      background: linear-gradient(
+        130deg,
+        rgba(152,113,193,0.15),
+        rgba(255,255,255,0.04)
+      );
+    }
+
+    .weather-icon {
+      color: #d2b6f2;
+      animation: weatherFloat 4s ease-in-out infinite;
+    }
+
+    .weather-icon ha-icon {
+      --mdc-icon-size: 38px;
+    }
+
+    .weather-temp {
+      font-size: 20px;
+      font-weight: 700;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .weather-condition {
+      margin-top: 4px;
+      color: #bdb5ca;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .weather-empty {
+      color: #bdb5ca;
+      font-size: 12px;
+    }
+
+    @keyframes weatherFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
     }
 
     .connection {
@@ -713,8 +862,7 @@ ControlRoomDashboard.styles = i$3 `
       font-weight: 750;
     }
 
-    .hero p,
-    .placeholder-page p {
+    .hero p, .placeholder-page p {
       color: #aaa4b8;
       font-size: 15px;
       line-height: 1.6;
@@ -739,28 +887,22 @@ ControlRoomDashboard.styles = i$3 `
       min-height: 175px;
       padding: 22px;
       border-radius: 22px;
-      background:
-        linear-gradient(
-          145deg,
-          rgba(255,255,255,0.065),
-          rgba(255,255,255,0.022)
-        );
+      background: linear-gradient(
+        145deg,
+        rgba(255,255,255,0.065),
+        rgba(255,255,255,0.022)
+      );
       border: 1px solid rgba(255,255,255,0.085);
       transition: transform 180ms, border-color 180ms;
     }
 
     .overview-card:hover {
       transform: translateY(-2px);
-      border-color: rgba(186, 150, 213, 0.3);
+      border-color: rgba(186,150,213,0.3);
     }
 
-    .card-icon {
-      color: #c2a5e1;
-    }
-
-    .card-icon ha-icon {
-      --mdc-icon-size: 27px;
-    }
+    .card-icon { color: #c2a5e1; }
+    .card-icon ha-icon { --mdc-icon-size: 27px; }
 
     .card-title {
       font-size: 17px;
@@ -789,12 +931,10 @@ ControlRoomDashboard.styles = i$3 `
       height: 82px;
       border-radius: 25px;
       color: #d4b7ee;
-      background: rgba(153, 108, 189, 0.14);
+      background: rgba(153,108,189,0.14);
     }
 
-    .placeholder-icon ha-icon {
-      --mdc-icon-size: 39px;
-    }
+    .placeholder-icon ha-icon { --mdc-icon-size: 39px; }
 
     .menu-button {
       display: none;
@@ -811,19 +951,17 @@ ControlRoomDashboard.styles = i$3 `
         min-width: 210px;
       }
 
-      .main {
-        padding: 25px 22px;
-      }
+      .main { padding: 25px 22px; }
 
       .overview-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+
+      .connection { display: none; }
     }
 
     @media (max-width: 750px) {
-      .dashboard {
-        border-radius: 0;
-      }
+      .dashboard { border-radius: 0; }
 
       .sidebar {
         position: fixed;
@@ -838,33 +976,40 @@ ControlRoomDashboard.styles = i$3 `
         box-shadow: 12px 0 40px rgba(0,0,0,0.3);
       }
 
-      .sidebar.open {
-        transform: translateX(0);
+      .sidebar.open { transform: translateX(0); }
+      .menu-button { display: block; }
+      .main { padding: 20px 16px 35px; }
+      .topbar { margin-bottom: 30px; }
+      .overview-grid { grid-template-columns: 1fr; }
+      .overview-card { min-height: 135px; }
+
+      .weather {
+        min-width: 0;
+        padding: 10px;
       }
 
-      .menu-button {
-        display: block;
-      }
+      .weather-icon ha-icon { --mdc-icon-size: 29px; }
+      .weather-temp { font-size: 16px; }
+      .weather-condition { font-size: 10px; }
+      .clock { padding: 10px; }
+      .clock-time { font-size: 17px; }
+    }
 
-      .main {
-        padding: 20px 16px 35px;
-      }
-
+    @media (max-width: 450px) {
       .topbar {
-        margin-bottom: 30px;
+        align-items: flex-start;
       }
 
-      .connection {
-        display: none;
-      }
+      .topbar-right { gap: 6px; }
 
-      .overview-grid {
-        grid-template-columns: 1fr;
-      }
+      .weather-condition { display: none; }
+      .weather-icon ha-icon { --mdc-icon-size: 25px; }
+      .weather { gap: 6px; }
+      .clock-date { font-size: 9px; }
+    }
 
-      .overview-card {
-        min-height: 135px;
-      }
+    @media (prefers-reduced-motion: reduce) {
+      .weather-icon { animation: none; }
     }
   `;
 __decorate([
