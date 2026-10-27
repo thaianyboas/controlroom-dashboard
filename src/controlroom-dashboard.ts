@@ -341,11 +341,52 @@ export class ControlRoomDashboard extends LitElement {
   @state()
   private lightAreas: Record<string, string> = {};
 
+  @state() private labelOptions: Array<{label_id:string;name:string}> = [];
+  @state() private entityLabels: Record<string,string[]> = {};
+  @state() private groupMembers: Record<string,string[]> = {};
+  @state() private visibilitySettingsOpen = false;
+  @state() private groupMode: "auto" | "all" | "manual" = "auto";
+  @state() private hiddenEntities: string[] = [];
+  @state() private shownEntities: string[] = [];
+  @state() private excludedLabels: string[] = ["no_dboard"];
+  @state() private onlyUnlabeled = false;
+  @state() private showTypeDescriptions = false;
+  @state() private showStatusDescriptions = false;
+  private settingsInitialized = false;
   private registryLoaded = false;
   private registryLoading = false;
 
 
   private clockInterval?: ReturnType<typeof setInterval>;
+
+  private restorePreferences(): void {
+    if (this.settingsInitialized) return;
+    this.settingsInitialized = true;
+    try {
+      const raw = localStorage.getItem("controlroom-lighting-v1");
+      if (!raw) return;
+      const v = JSON.parse(raw) as Record<string,unknown>;
+      if (v.groupMode === "auto" || v.groupMode === "all" || v.groupMode === "manual") this.groupMode = v.groupMode;
+      if (Array.isArray(v.hiddenEntities)) this.hiddenEntities = v.hiddenEntities.filter((x):x is string=>typeof x==="string");
+      if (Array.isArray(v.shownEntities)) this.shownEntities = v.shownEntities.filter((x):x is string=>typeof x==="string");
+      if (Array.isArray(v.excludedLabels)) this.excludedLabels = v.excludedLabels.filter((x):x is string=>typeof x==="string");
+      if (typeof v.onlyUnlabeled === "boolean") this.onlyUnlabeled = v.onlyUnlabeled;
+      if (typeof v.showTypeDescriptions === "boolean") this.showTypeDescriptions = v.showTypeDescriptions;
+      if (typeof v.showStatusDescriptions === "boolean") this.showStatusDescriptions = v.showStatusDescriptions;
+    } catch (error) { console.warn("ControlRoom: lighting preferences unavailable",error); }
+  }
+
+  private savePreferences(): void {
+    try { localStorage.setItem("controlroom-lighting-v1",JSON.stringify({
+      groupMode:this.groupMode,hiddenEntities:this.hiddenEntities,shownEntities:this.shownEntities,
+      excludedLabels:this.excludedLabels,onlyUnlabeled:this.onlyUnlabeled,
+      showTypeDescriptions:this.showTypeDescriptions,showStatusDescriptions:this.showStatusDescriptions
+    })); } catch(error) { console.warn("ControlRoom: preferences could not be saved",error); }
+  }
+
+  private toggleEntry(list: string[], id: string): string[] {
+    return list.includes(id) ? list.filter(x=>x!==id) : [...list,id];
+  }
 
   public setConfig(config: DashboardConfig): void {
     this.config = config;
@@ -371,13 +412,23 @@ export class ControlRoomDashboard extends LitElement {
         this.hass.callWS({type:"config/device_registry/list"})
       ]);
       const areas = areasRaw as Array<{area_id:string;name:string}>;
-      const entities = entitiesRaw as Array<{entity_id:string;area_id?:string|null;device_id?:string|null}>;
-      const devices = devicesRaw as Array<{id:string;area_id?:string|null}>;
+      const entities = entitiesRaw as Array<{entity_id:string;area_id?:string|null;device_id?:string|null;labels?:string[]}>;
+      const devices = devicesRaw as Array<{id:string;area_id?:string|null;labels?:string[]}>;
       const deviceArea = new Map(devices.map(d=>[d.id,d.area_id || ""]));
       this.areaNames = Object.fromEntries(areas.map(a=>[a.area_id,a.name]));
       this.lightAreas = Object.fromEntries(entities.filter(e=>e.entity_id.startsWith("light.")).map(e=>[
         e.entity_id,e.area_id || (e.device_id ? deviceArea.get(e.device_id) : "") || ""
       ]));
+      // Labels live in HA registries, not in hass.states. A failure to read labels
+      // must not prevent the rest of the lighting dashboard from loading.
+      const deviceLabels = new Map(devices.map(d=>[d.id,d.labels || []]));
+      this.entityLabels = Object.fromEntries(entities.map(e=>[
+        e.entity_id,[...new Set([...(e.labels || []),...(e.device_id ? deviceLabels.get(e.device_id) || [] : [])])]
+      ]));
+      try {
+        const labels = await this.hass!.callWS!({type:"config/label_registry/list"}) as Array<{label_id:string;name:string}>;
+        this.labelOptions = labels.sort((a,b)=>a.name.localeCompare(b.name));
+      } catch(error) { console.warn("ControlRoom: label registry unavailable",error); }
       this.registryLoaded = true;
     } catch (error) {
       console.warn("ControlRoom: area registry not available",error);
@@ -389,6 +440,7 @@ export class ControlRoomDashboard extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.restorePreferences();
     this.currentTime = new Date();
     this.clockInterval = setInterval(() => {
       this.currentTime = new Date();
@@ -573,27 +625,83 @@ export class ControlRoomDashboard extends LitElement {
     `;
   }
 
-  private getLights(): HAEntity[] {
-    const states = this.hass?.states ?? {};
-    const lights = Object.values(states).filter((entity) =>
-      entity.entity_id.startsWith("light.")
-    );
+  private getAllLightEntities(): HAEntity[] {
+    return Object.values(this.hass?.states ?? {}).filter(e=>e.entity_id.startsWith("light."))
+      .sort((a,b)=>this.getLightName(a).localeCompare(this.getLightName(b),this.getLanguage()));
+  }
 
-    // Exclude a group when all its members are available as individual lights.
-    // This avoids counting the same lights twice while keeping individual controls.
-    return lights.filter((entity) => {
-      const members = entity.attributes.entity_id;
-      if (!Array.isArray(members) || members.length === 0) return true;
-      const lightMembers = members.filter((id): id is string =>
-        typeof id === "string" && id.startsWith("light.")
-      );
-      return !(
-        lightMembers.length > 0 &&
-        lightMembers.every((id) => Boolean(states[id]))
-      );
-    }).sort((a, b) => this.getLightName(a).localeCompare(
-      this.getLightName(b), this.getLanguage()
-    ));
+  private getGroupMembers(light: HAEntity): string[] {
+    const ids = light.attributes.entity_id;
+    return Array.isArray(ids) ? ids.filter((id):id is string=>typeof id==="string" && id.startsWith("light.")) : [];
+  }
+
+  private getLights(): HAEntity[] {
+    const all = this.getAllLightEntities();
+    const stateIds = new Set(all.map(l=>l.entity_id));
+    const groups = all.filter(l=>this.getGroupMembers(l).some(id=>stateIds.has(id)));
+    const groupedMembers = new Set(groups.flatMap(g=>this.getGroupMembers(g)));
+    return all.filter(light=>{
+      const id=light.entity_id;
+      const labels=this.entityLabels[id] || [];
+      if (this.hiddenEntities.includes(id)) return false;
+      if (this.shownEntities.includes(id)) return true;
+      if (labels.some(label=>this.excludedLabels.includes(label))) return false;
+      if (this.onlyUnlabeled && labels.length) return false;
+      if (this.groupMode === "manual") return true;
+      if (this.groupMode === "auto" && groupedMembers.has(id)) {
+        // Only suppress a member if at least one containing group is itself visible.
+        return !groups.some(g=>this.getGroupMembers(g).includes(id) &&
+          !this.hiddenEntities.includes(g.entity_id) &&
+          !((this.entityLabels[g.entity_id] || []).some(label=>this.excludedLabels.includes(label))) &&
+          (!this.onlyUnlabeled || !(this.entityLabels[g.entity_id] || []).length));
+      }
+      return true;
+    });
+  }
+
+  private renderLightingPreferences() {
+    const all = this.getAllLightEntities();
+    return html`<section class="lighting-preferences">
+      <div class="preferences-header"><strong>${this.getLanguage()==="de"?"Sichtbarkeit & Darstellung":this.getLanguage()==="pt"?"Visibilidade e aparência":"Visibility & appearance"}</strong>
+        <button @click=${()=>this.visibilitySettingsOpen=false} aria-label="Close">${this.renderIcon("mdi:close")}</button></div>
+      <div class="pref-title">${this.getLanguage()==="de"?"Gruppenanzeige":"Exibição dos grupos"}</div>
+      <div class="pref-modes">
+        ${([ ["auto","Gruppen bevorzugen"],["all","Alle anzeigen"],["manual","Manuell"] ] as const).map(([id,label])=>html`
+          <button class=${this.groupMode===id?"active":""} @click=${()=>{this.groupMode=id;this.savePreferences();}}>${label}</button>`)}
+      </div>
+      <div class="pref-title">Home Assistant Labels · ${this.labelOptions.length}</div>
+      <div class="pref-list">
+        ${this.labelOptions.map(label=>html`<label class="pref-check"><input type="checkbox"
+          .checked=${this.excludedLabels.includes(label.label_id)}
+          @change=${()=>{this.excludedLabels=this.toggleEntry(this.excludedLabels,label.label_id);this.savePreferences();}} />
+          <span>${label.name}</span><small>${label.label_id}</small><span class="pref-hint">${this.getLanguage()==="de"?"Ausblenden":"Ocultar"}</span></label>`)}
+        ${!this.labelOptions.length?html`<small>${this.registryLoading?"Labels werden geladen…":"Keine Labels verfügbar (Registry prüfen)"}</small>`:nothing}
+        <label class="pref-check"><input type="checkbox" .checked=${this.onlyUnlabeled}
+          @change=${()=>{this.onlyUnlabeled=!this.onlyUnlabeled;this.savePreferences();}}/><span>Nur ohne Label / Somente sem label</span></label>
+      </div>
+      <div class="pref-title">${this.getLanguage()==="de"?"Darstellung":"Aparência"}</div>
+      <div class="pref-list">
+        <label class="pref-check"><input type="checkbox" .checked=${this.showTypeDescriptions}
+          @change=${()=>{this.showTypeDescriptions=!this.showTypeDescriptions;this.savePreferences();}}/><span>Gerätetyp anzeigen</span></label>
+        <label class="pref-check"><input type="checkbox" .checked=${this.showStatusDescriptions}
+          @change=${()=>{this.showStatusDescriptions=!this.showStatusDescriptions;this.savePreferences();}}/><span>Status anzeigen</span></label>
+      </div>
+      <div class="pref-title">${this.getLanguage()==="de"?"Einzelne Lichter":"Luzes individuais"} · ${all.length}</div>
+      <div class="pref-entities">${all.map(light=>{
+        const id=light.entity_id;
+        const override=this.hiddenEntities.includes(id)?"hide":this.shownEntities.includes(id)?"show":"auto";
+        const isGroup=this.getGroupMembers(light).length>0;
+        return html`<div class="pref-entity"><span class="pref-entity-name">${this.renderIcon(isGroup?"mdi:lightbulb-group-outline":"mdi:lightbulb-outline")}${this.getLightName(light)}<small>${isGroup?"Gruppe":""}</small></span>
+          <select .value=${override} aria-label=${this.getLightName(light)} @change=${(ev:Event)=>{
+            const next=(ev.target as HTMLSelectElement).value;
+            this.hiddenEntities=this.hiddenEntities.filter(x=>x!==id);
+            this.shownEntities=this.shownEntities.filter(x=>x!==id);
+            if(next==="hide")this.hiddenEntities=[...this.hiddenEntities,id];
+            if(next==="show")this.shownEntities=[...this.shownEntities,id];
+            this.savePreferences();
+          }}><option value="auto">Auto</option><option value="show">Anzeigen</option><option value="hide">Ausblenden</option></select></div>`;
+      })}</div>
+    </section>`;
   }
 
   private getLightName(light: HAEntity): string {
@@ -681,7 +789,7 @@ export class ControlRoomDashboard extends LitElement {
     const off = lights.filter(l=>l.state==="off").length;
     const lit = lights.filter(l=>l.state==="on");
     const avg = lit.length ? lit.reduce((n,l)=>n+this.getBrightness(l),0)/lit.length : 0;
-    const roomNames = [...new Set(lit.map(l=>this.getLightRoom(l)))].slice(0,3);
+
     return html`
       <article class="overview-card lights-card premium-lights ${on?"has-light":""}">
         <div class="pendant-corner">${this.renderPendant(on>0,avg)}</div>
@@ -700,11 +808,7 @@ export class ControlRoomDashboard extends LitElement {
               ${this.t("lighting")} ${this.renderIcon("mdi:arrow-right")}
             </button>
           </div>
-          <div class="premium-rooms">
-            ${roomNames.length ? roomNames.map(name=>html`
-              <span class="room-chip">${this.renderIcon("mdi:lightbulb-on-outline")}${name}</span>
-            `) : html`<span class="room-chip">${this.t("noLights") === "" ? "" : `${lights.length} ${this.t("lights")}`}</span>`}
-          </div>
+
         </div>
       </article>
     `;
@@ -716,15 +820,17 @@ export class ControlRoomDashboard extends LitElement {
     const available = lights.filter(l=>l.state==="on"||l.state==="off");
     const rooms = [...new Set(lights.map(l=>this.getLightRoom(l)))].sort((a,b)=>a.localeCompare(b,this.getLanguage()));
     const filtered = this.selectedRoom ? lights.filter(l=>this.getLightRoom(l)===this.selectedRoom) : lights;
-    const chosen = lights.find(l=>l.entity_id===this.selectedLightId) || filtered[0];
+    const chosen = filtered.find(l=>l.entity_id===this.selectedLightId) || filtered[0];
     const avg = on ? lights.filter(l=>l.state==="on").reduce((n,l)=>n+this.getBrightness(l),0)/on : 0;
     return html`
       <section class="lighting-studio">
         <div class="studio-heading">
-          <div><div class="eyebrow">CONTROLROOM / SMART HOME</div>
-            <h1>${this.t("lighting")}</h1></div>
+          <div class="studio-heading-left"><button class="studio-back" @click=${()=>this.navigate("home")} aria-label=${this.t("home")}>${this.renderIcon("mdi:arrow-left")}</button><div><div class="eyebrow">CONTROLROOM / SMART HOME</div>
+            <h1>${this.t("lighting")}</h1></div></div>
+          <button class="studio-settings" @click=${()=>this.visibilitySettingsOpen=!this.visibilitySettingsOpen} aria-label="Sichtbarkeit & Darstellung">${this.renderIcon("mdi:tune-variant")}</button>
           <span class="studio-total">${on} ${this.t("lightsOn")} · ${available.length-on} ${this.t("lightsOff")}</span>
         </div>
+        ${this.visibilitySettingsOpen?this.renderLightingPreferences():nothing}
         <div class="studio-hero ${on?"lit":""}">
           <div class="studio-hero-info">
             <div class="studio-kicker">${this.t("lighting")}</div>
@@ -770,10 +876,10 @@ export class ControlRoomDashboard extends LitElement {
               return html`<article class="studio-light ${selected?"selected":""} ${active?"active":""}">
                 <button class="studio-light-select" @click=${()=>this.selectedLightId=light.entity_id}>
                   <span class="studio-light-icon">${this.renderIcon(active?"mdi:lightbulb-on":"mdi:lightbulb-outline")}</span>
-                  <span class="studio-light-state">${available?this.t(active?"lightsOn":"lightsOff"):this.t("lightUnavailable")}</span>
+                  ${this.showStatusDescriptions?html`<span class="studio-light-state">${available?this.t(active?"lightsOn":"lightsOff"):this.t("lightUnavailable")}</span>`:nothing}
                   <span class="studio-light-name">${this.getLightName(light)}</span>
-                  <span class="studio-light-room">${this.getLightRoom(light)}</span>
-                  <span class="studio-light-level">${this.supportsBrightness(light)?`${this.getBrightness(light)}%`:""}</span>
+                  ${this.showTypeDescriptions?html`<span class="studio-light-room">${this.getGroupMembers(light).length?`Gruppe · ${this.getGroupMembers(light).length} Lampen`:"Einzellicht"}</span>`:nothing}
+                  ${active&&this.supportsBrightness(light)?html`<span class="studio-light-level">${this.getBrightness(light)}%</span>`:nothing}
                 </button>
                 <button type="button" class="studio-toggle ${active?"on":""}"
                   ?disabled=${!available||!this.hass?.callService}
@@ -1334,7 +1440,7 @@ export class ControlRoomDashboard extends LitElement {
 
 
     .lights-card { gap: 13px; order: 3; }
-    .premium-lights { position: relative; min-height: 230px; overflow: hidden; }
+    .premium-lights { position: relative; min-height: 190px; overflow: hidden; }
     .premium-lights.has-light { border-color: rgba(215,165,104,.32); }
     .premium-lights-content { position:relative; z-index:1; display:flex; flex-direction:column; gap:12px; height:100%; }
     .premium-lights .card-icon { color:#f1bf77; }
@@ -1351,7 +1457,29 @@ export class ControlRoomDashboard extends LitElement {
     .room-chip { display:flex; align-items:center; gap:4px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.05); padding:5px 8px; border-radius:999px; font-size:10px; color:#d5c9dd; }
     .room-chip ha-icon { --mdc-icon-size:13px; color:#e6b877; }
     .lighting-studio { max-width:1100px; margin:auto; }
-    .studio-heading { display:flex; justify-content:space-between; align-items:end; gap:15px; margin-bottom:20px; }
+    .studio-heading { display:flex; justify-content:space-between; align-items:center; gap:15px; margin-bottom:20px; }
+    .studio-heading-left {display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+    .studio-back,.studio-settings {display:grid;place-items:center;width:38px;height:38px;flex:none;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.05);color:#eee2f5;cursor:pointer}
+    .studio-back:hover,.studio-settings:hover {background:rgba(169,127,204,.2)}
+    .lighting-preferences {margin:0 0 17px;padding:18px;border:1px solid rgba(198,160,224,.22);border-radius:20px;background:linear-gradient(130deg,#292137,#1d1b28)}
+    .preferences-header {display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .preferences-header button {border:0;background:transparent;color:#cfc0dd;cursor:pointer}
+    .pref-title {margin:18px 0 9px;color:#bba9cc;font-size:12px;font-weight:650}
+    .pref-modes {display:flex;gap:7px;flex-wrap:wrap}
+    .pref-modes button {padding:8px 12px;border:1px solid rgba(255,255,255,.13);border-radius:999px;background:rgba(255,255,255,.04);color:#d7cbe0;cursor:pointer;font-size:12px}
+    .pref-modes button.active {background:rgba(171,128,207,.3);border-color:rgba(211,174,237,.45);color:#fff}
+    .pref-list {display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:7px}
+    .pref-check {display:flex;align-items:center;gap:9px;min-width:0;padding:9px 11px;border:1px solid rgba(255,255,255,.06);border-radius:11px;background:rgba(255,255,255,.025);font-size:12px;color:#e7deee;cursor:pointer}
+    .pref-check input {accent-color:#ad83cb}
+    .pref-check small {color:#8f829c;overflow:hidden;text-overflow:ellipsis}
+    .pref-hint {margin-left:auto;color:#a899b5;font-size:10px}
+    .pref-entities {display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:7px;max-height:270px;overflow-y:auto}
+    .pref-entity {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border:1px solid rgba(255,255,255,.06);border-radius:11px;background:rgba(255,255,255,.025)}
+    .pref-entity-name {display:flex;align-items:center;gap:8px;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pref-entity-name ha-icon {--mdc-icon-size:17px;color:#c5a7da;flex:none}
+    .pref-entity-name small {color:#92849e;font-size:10px}
+    .pref-entity select {max-width:105px;padding:6px;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:#30283c;color:#f5eef9;font-size:11px}
+    
     .studio-heading h1 { margin:7px 0 0; }
     .studio-total { font-size:12px; color:#b5a8c1; }
     .studio-hero { position:relative; display:flex; min-height:185px; overflow:hidden; padding:22px; border:1px solid rgba(199,164,225,.2); border-radius:22px; background:linear-gradient(110deg,#30223d,#1b1928); }
@@ -1385,18 +1513,18 @@ export class ControlRoomDashboard extends LitElement {
     .room-filters button { white-space:nowrap; padding:7px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.16); background:transparent; color:#c6b9d1; cursor:pointer; }
     .room-filters button.active { background:#e6dbe9; color:#251e2c; }
     .studio-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-    .studio-light { position:relative; min-height:145px; padding:15px; border-radius:18px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.045); }
+    .studio-light { position:relative; min-height:100px; padding:12px; border-radius:18px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.045); }
     .studio-light.selected { border-color:rgba(203,156,236,.65); background:rgba(158,112,189,.14); }
     .studio-light.active { box-shadow:inset 0 0 32px rgba(244,190,105,.045); }
     .studio-light-select { display:flex; flex-direction:column; align-items:flex-start; width:100%; height:100%; border:0; background:transparent; color:inherit; cursor:pointer; text-align:left; }
-    .studio-light-icon { display:grid; place-items:center; width:35px; height:35px; border-radius:11px; color:#a89db5; background:rgba(255,255,255,.06); }
+    .studio-light-icon { display:grid; place-items:center; width:30px; height:30px; border-radius:11px; color:#a89db5; background:rgba(255,255,255,.06); }
     .studio-light.active .studio-light-icon { color:#f2c887; background:rgba(232,179,96,.16); }
     .studio-light-state { position:absolute; right:14px; top:16px; color:#a99db5; font-size:10px; }
     .studio-light.active .studio-light-state { color:#87d5ad; }
-    .studio-light-name { margin-top:13px; font-size:14px; font-weight:650; }
+    .studio-light-name { margin-top:8px; font-size:14px; font-weight:650; }
     .studio-light-room { margin-top:4px; color:#a99eb6; font-size:11px; }
-    .studio-light-level { margin-top:10px; color:#bca8ca; font-size:11px; }
-    .studio-toggle { position:absolute; right:15px; bottom:15px; padding:4px; border:0; background:transparent; color:#756b80; cursor:pointer; }
+    .studio-light-level { margin-top:5px; color:#bca8ca; font-size:11px; }
+    .studio-toggle { position:absolute; right:12px; bottom:12px; padding:4px; border:0; background:transparent; color:#756b80; cursor:pointer; }
     .studio-toggle.on { color:#d6b3ed; }
     .studio-toggle ha-icon { --mdc-icon-size:23px; }
     .studio-detail { position:relative; margin-top:15px; padding:22px; border-radius:20px; border:1px solid rgba(191,149,220,.25); background:rgba(146,108,178,.1); }
