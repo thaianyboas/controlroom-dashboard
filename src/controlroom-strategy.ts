@@ -98,3 +98,5 @@ if (
       "https://github.com/thaianyboas/controlroom-dashboard"
   });
 }
+
+export {};
