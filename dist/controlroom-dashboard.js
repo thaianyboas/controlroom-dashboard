@@ -371,6 +371,17 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.lightsTab = "lights";
         this.areaNames = {};
         this.lightAreas = {};
+        this.allEntityAreas = {};
+        this.roomDetail = "";
+        this.roomImages = {};
+        this.roomImageEditor = false;
+        this.roomStyle = "3d";
+        this.roomAutoSwitch = false;
+        this.roomStyleByArea = {};
+        this.roomPhotoUrls = {};
+        this.roomStyleEditor = false;
+        this.roomStyleSnapshot = "";
+        this.roomImageDraft = "";
         this.labelOptions = [];
         this.entityLabels = {};
         this.groupMembers = {};
@@ -649,6 +660,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             const devices = devicesRaw;
             const deviceArea = new Map(devices.map(d => [d.id, d.area_id || ""]));
             this.areaNames = Object.fromEntries(areas.map(a => [a.area_id, a.name]));
+            this.allEntityAreas = Object.fromEntries(entities.map(e => [e.entity_id, e.area_id || (e.device_id ? deviceArea.get(e.device_id) : "") || ""]));
             this.lightAreas = Object.fromEntries(entities.filter(e => e.entity_id.startsWith("light.")).map(e => [
                 e.entity_id, e.area_id || (e.device_id ? deviceArea.get(e.device_id) : "") || ""
             ]));
@@ -678,6 +690,26 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     connectedCallback() {
         super.connectedCallback();
         this.restorePreferences();
+        try {
+            this.roomImages = JSON.parse(localStorage.getItem("controlroom-room-images-v1") || "{}");
+        }
+        catch {
+            this.roomImages = {};
+        }
+        try {
+            const v = JSON.parse(localStorage.getItem("controlroom-room-style-v1") || "{}");
+            if (["3d", "photos", "custom"].includes(v.style))
+                this.roomStyle = v.style;
+            if (typeof v.auto === "boolean")
+                this.roomAutoSwitch = v.auto;
+            if (v.byArea && typeof v.byArea === "object")
+                this.roomStyleByArea = v.byArea;
+            if (v.photos && typeof v.photos === "object")
+                this.roomPhotoUrls = v.photos;
+        }
+        catch (error) {
+            console.warn(error);
+        }
         this.restoreWelcome();
         this.restoreSmartSettings();
         this.currentTime = new Date();
@@ -1552,11 +1584,133 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       </section>
     `;
     }
+    roomKind(name) {
+        const n = name.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const rules = [
+            ["controlraum", /controlraum|control room|technikraum|technical room|sala tecnica|sala de controle|serverraum|server room|hauszentrale|smart home hub/], ["pooltechnik", /pooltechnik|piscina tecnica|pumpenraum|pool equipment|pool plant/], ["heizungsraum", /heizungsraum|heizraum|boiler room|heating room|sala de aquecimento/], ["solartechnik", /solartechnik|solar room|pv technik|photovoltaik|inverterraum|sala solar/], ["wintergarten", /wintergarten|conservatory|jardim de inverno/], ["terrasse", /terrasse|terrace|terraco|patio/], ["pool", /pool|piscina|schwimmbad|swimming/], ["garten", /garten|garden|jardim|quintal/], ["wohnzimmer", /wohn|living|lounge|sala/], ["schlafzimmer", /schlaf|bedroom|quarto/],
+            ["kuche", /kuche|kitchen|cozinha/], ["badezimmer", /bad|bath|banho|wc|toilet/],
+            ["esszimmer", /esszimmer|dining|jantar/], ["balkon", /balkon|balcon/],
+            ["flur", /flur|hall|eingang|corredor|foyer/], ["buro", /buro|office|escritorio|arbeitszimmer/],
+            ["garage", /garage|garagem|carport/], ["keller", /keller|basement|por[aã]o|adega|cellar/],
+            ["waschkuche", /wasch|laundry|lavanderia/], ["hobbyraum", /hobby|spielzimmer|game|fitness|gym/]
+        ];
+        return rules.find(([, pattern]) => pattern.test(n))?.[0] || "generic";
+    }
+    roomIcon(name) {
+        const icons = { wohnzimmer: "mdi:sofa-outline", schlafzimmer: "mdi:bed-king-outline", kuche: "mdi:chef-hat", badezimmer: "mdi:bathtub-outline", esszimmer: "mdi:table-furniture", balkon: "mdi:flower-outline", flur: "mdi:door-open", buro: "mdi:desk", garage: "mdi:garage-variant", keller: "mdi:archive-outline", waschkuche: "mdi:washing-machine", hobbyraum: "mdi:controller-classic-outline", controlraum: "mdi:server-network", pool: "mdi:pool", garten: "mdi:flower-outline", pooltechnik: "mdi:pump", heizungsraum: "mdi:radiator", solartechnik: "mdi:solar-power", terrasse: "mdi:flower-outline", wintergarten: "mdi:greenhouse", generic: "mdi:home-outline" };
+        return icons[this.roomKind(name)];
+    }
+    roomArt(areaId, name) {
+        const own = this.roomImages[areaId];
+        const mode = this.roomStyleByArea[areaId] || this.roomStyle;
+        const automatic = this.roomAutoSwitch && !this.roomStyleByArea[areaId] && mode !== "custom";
+        const selected = automatic && Math.floor(this.currentTime.getTime() / 86400000) % 2 === 1 ? (mode === "3d" ? "photos" : "3d") : mode;
+        const kind = this.roomKind(name);
+        const image = selected === "custom" ? own : selected === "photos" ? this.roomPhotoUrls[kind] || own : `/local/controlroom/rooms/${kind}.webp`;
+        return image ? b `<img src=${image} alt=${name} loading="lazy" @error=${(e) => { e.target.style.display = "none"; }}/>${this.renderIcon(this.roomIcon(name))}` : this.renderIcon(this.roomIcon(name));
+    }
+    saveRoomVisualSettings() {
+        try {
+            localStorage.setItem("controlroom-room-style-v1", JSON.stringify({ style: this.roomStyle, auto: this.roomAutoSwitch, byArea: this.roomStyleByArea, photos: this.roomPhotoUrls }));
+        }
+        catch (error) {
+            console.warn("ControlRoom: room visual settings not saved", error);
+        }
+        this.roomStyleSnapshot = JSON.stringify(this.roomVisualData());
+        this.roomStyleEditor = false;
+    }
+    roomVisualData() { return { style: this.roomStyle, auto: this.roomAutoSwitch, byArea: this.roomStyleByArea, photos: this.roomPhotoUrls }; }
+    cancelRoomVisualSettings() {
+        if (this.roomStyleSnapshot) {
+            const v = JSON.parse(this.roomStyleSnapshot);
+            this.roomStyle = v.style;
+            this.roomAutoSwitch = v.auto;
+            this.roomStyleByArea = v.byArea;
+            this.roomPhotoUrls = v.photos;
+        }
+        this.roomStyleEditor = false;
+    }
+    renderRoomStyleEditor(areas) {
+        return b `<div class="cr-room-visual-editor"><div class="cr-room-visual-head"><div class="cr-room-kicker">CONTROLROOM · PERSONALISIERUNG</div><h2>Räume – Bildstil</h2><p>Wähle Premium 3D, Premium Fotos oder eigene Bilder für jeden Raum.</p></div>
+      <label class="welcome-setting-text">Standard-Bildstil<select .value=${this.roomStyle} @change=${(e) => this.roomStyle = e.target.value}><option value="3d">Premium 3D</option><option value="photos">Premium Fotos</option><option value="custom">Eigene Fotos</option></select></label>
+      <label class="welcome-setting-row"><span>Automatischer Bildwechsel (täglich, 3D / Fotos)</span><input type="checkbox" .checked=${this.roomAutoSwitch} @change=${(e) => this.roomAutoSwitch = e.target.checked}/></label>
+      <p class="settings-note">Premium Fotos benötigen eine Foto-URL pro Raum. Ohne Foto wird ein Symbol angezeigt. Eigene Bilder werden niemals automatisch gewechselt.</p>
+      ${areas.map(([id, name]) => b `<div class="cr-room-visual-row"><strong>${this.renderIcon(this.roomIcon(name))} ${name}</strong><select .value=${this.roomStyleByArea[id] || ""} @change=${(e) => { const v = e.target.value; this.roomStyleByArea = { ...this.roomStyleByArea, [id]: v }; }}><option value="">Standard</option><option value="3d">Premium 3D</option><option value="photos">Premium Fotos</option><option value="custom">Eigene Fotos</option></select><input type="text" placeholder="Bild-URL: /local/... oder https://..." .value=${this.roomPhotoUrls[this.roomKind(name)] || ""} @change=${(e) => { this.roomPhotoUrls = { ...this.roomPhotoUrls, [this.roomKind(name)]: e.target.value }; }}/></div>`)}
+      <div class="cr-room-visual-actions"><button @click=${() => this.cancelRoomVisualSettings()}>Abbrechen</button><button @click=${() => this.saveRoomVisualSettings()}>Speichern</button></div></div>`;
+    }
+    roomEntities(areaId) {
+        return Object.values(this.hass?.states || {}).filter(e => this.allEntityAreas[e.entity_id] === areaId);
+    }
+    async roomLightsToggle(lights, on) {
+        if (!this.hass?.callService || !lights.length)
+            return;
+        try {
+            await this.hass.callService("light", on ? "turn_on" : "turn_off", { entity_id: lights.map(e => e.entity_id) });
+        }
+        catch (error) {
+            console.warn("ControlRoom: room lights action failed", error);
+        }
+    }
+    saveRoomImage(areaId) {
+        const value = this.roomImageDraft.trim();
+        this.roomImages = { ...this.roomImages, [areaId]: value };
+        try {
+            localStorage.setItem("controlroom-room-images-v1", JSON.stringify(this.roomImages));
+        }
+        catch (error) {
+            console.warn(error);
+        }
+        this.roomImageEditor = false;
+    }
+    renderRoomsPage() {
+        const areas = Object.entries(this.areaNames).sort((a, b) => a[1].localeCompare(b[1], this.getLanguage()));
+        const selected = areas.find(a => a[0] === this.roomDetail);
+        const types = [
+            { label: "Lampen", domain: "light", icon: "mdi:lightbulb-outline" },
+            { label: "Rollos", domain: "cover", icon: "mdi:blinds" },
+            { label: "Szenen", domain: "scene", icon: "mdi:palette-outline" },
+            { label: "Heizung", domain: "climate", icon: "mdi:thermostat" },
+            { label: "Medien", domain: "media_player", icon: "mdi:music-note-outline" },
+            { label: "Steckdosen", domain: "switch", icon: "mdi:power-socket-de" },
+            { label: "Sonstiges", domain: "other", icon: "mdi:dots-horizontal-circle-outline" }
+        ];
+        if (selected) {
+            const [areaId, name] = selected;
+            const entities = this.roomEntities(areaId);
+            const lights = entities.filter(e => e.entity_id.startsWith("light."));
+            const on = lights.filter(e => e.state === "on").length;
+            return b `<section class="cr-rooms-page">
+        <button class="cr-room-back" @click=${() => { this.roomDetail = ""; this.roomImageEditor = false; }}>${this.renderIcon("mdi:arrow-left")} Alle Räume</button>
+        <div class="cr-room-detail-head"><div><span class="cr-room-kicker">CONTROLROOM · RÄUME</span><h1>${name}</h1><p>${entities.length} Geräte · ${on} von ${lights.length} Lichtern an</p></div>
+        <button class="cr-room-image-edit" @click=${() => { this.roomImageDraft = this.roomImages[areaId] || ""; this.roomImageEditor = !this.roomImageEditor; }}>${this.renderIcon("mdi:image-edit-outline")} Bild ändern</button></div>
+        ${this.roomImageEditor ? b `<div class="cr-room-image-form"><label>Bild-URL (https:// oder /local/...)</label><input .value=${this.roomImageDraft} @input=${(ev) => this.roomImageDraft = ev.target.value} placeholder="/local/controlroom/wohnzimmer.jpg"/><div><button @click=${() => this.roomImageEditor = false}>Abbrechen</button><button @click=${() => this.saveRoomImage(areaId)}>Speichern</button></div></div>` : A}
+        <div class="cr-room-detail-hero"><div class="cr-room-detail-art">${this.roomArt(areaId, name)}</div><div><span>RAUMSTATUS</span><h2>${on ? "Gemütlich beleuchtet" : "Alles ruhig"}</h2><p>${lights.length} Lampen · ${entities.length} Geräte</p><div class="cr-room-actions"><button ?disabled=${!lights.length} @click=${() => this.roomLightsToggle(lights, true)}>Alle an</button><button ?disabled=${!on} @click=${() => this.roomLightsToggle(lights, false)}>Alle aus</button></div></div></div>
+        <div class="cr-room-sections">${types.map(t => {
+                const members = entities.filter(e => t.domain === "other" ? !types.some(x => x.domain !== "other" && e.entity_id.startsWith(x.domain + ".")) : e.entity_id.startsWith(t.domain + "."));
+                return b `<article class="cr-room-section"><header>${this.renderIcon(t.icon)} <strong>${t.label}</strong><span>${members.length}</span></header>
+            ${members.length ? members.map(e => b `<div class="cr-room-device"><div><strong>${String(e.attributes.friendly_name || e.entity_id)}</strong><small>${e.state}</small></div>${["light", "switch"].some(d => e.entity_id.startsWith(d + ".")) ? b `<button ?disabled=${!["on", "off"].includes(e.state)} @click=${() => this.hass?.callService?.(e.entity_id.split(".")[0], "toggle", { entity_id: e.entity_id })}>${this.renderIcon(e.state === "on" ? "mdi:toggle-switch" : "mdi:toggle-switch-off-outline")}</button>` : A}</div>`) : b `<p class="cr-room-empty">Keine Geräte zugeordnet</p>`}</article>`;
+            })}</div>
+      </section>`;
+        }
+        return b `<section class="cr-rooms-page"><div class="cr-rooms-heading"><span class="cr-room-kicker">CONTROLROOM · SMART HOME</span><h1>Räume</h1><p>Dein Zuhause. Jeder Raum, perfekt verbunden.</p><button class="cr-room-image-edit" @click=${() => { this.roomStyleSnapshot = JSON.stringify(this.roomVisualData()); this.roomStyleEditor = !this.roomStyleEditor; }}>${this.renderIcon("mdi:palette-outline")} Bildstil</button></div>
+      ${this.roomStyleEditor ? this.renderRoomStyleEditor(areas) : A}
+      ${areas.length ? b `<div class="cr-room-grid">${areas.map(([id, name]) => {
+            const entities = this.roomEntities(id), lights = entities.filter(e => e.entity_id.startsWith("light.")), on = lights.filter(e => e.state === "on").length;
+            const temps = entities.filter(e => e.entity_id.startsWith("sensor.") && (e.attributes.device_class === "temperature" || e.entity_id.includes("temperature"))).find(e => !isNaN(Number(e.state)));
+            return b `<button class="cr-room-tile ${on ? "cr-room-lit" : ""}" @click=${() => { this.roomDetail = id; this.roomImageEditor = false; }}>
+          <div class="cr-room-tile-art">${this.roomArt(id, name)}<span class="cr-room-tile-arrow">${this.renderIcon("mdi:arrow-top-right")}</span></div>
+          <div class="cr-room-tile-body"><h2>${name}</h2><p>${entities.length} Geräte ${temps ? b `· ${temps.state} °C` : A}</p><div class="cr-room-tile-footer"><span class="cr-room-led ${on ? "active" : ""}"></span>${on} / ${lights.length} Lampen an</div></div>
+        </button>`;
+        })}</div>` : b `<div class="cr-room-empty-state">${this.renderIcon("mdi:home-search-outline")}<h2>Keine Räume gefunden</h2><p>Erstelle Bereiche in Home Assistant unter Einstellungen → Bereiche, Labels & Zonen.</p></div>`}
+    </section>`;
+    }
     renderPage() {
         if (this.activePage === "home")
             return this.renderHome();
         if (this.activePage === "lights")
             return this.renderLightsPage();
+        if (this.activePage === "rooms")
+            return this.renderRoomsPage();
         if (this.activePage === "settings")
             return this.renderWelcomeSettings();
         const page = pages.find((item) => item.id === this.activePage);
@@ -1604,6 +1758,72 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
 };
 ControlRoomDashboard.styles = i$3 `
+    /* ControlRoom Rooms Premium */
+    .cr-rooms-page{padding:clamp(10px,2vw,26px) 0 45px;color:#f5eff9;min-width:0}
+    .cr-room-kicker{font-size:10px;letter-spacing:2.4px;color:#b99bcf;font-weight:750}
+    .cr-rooms-heading h1,.cr-room-detail-head h1{font-size:clamp(29px,3vw,43px);margin:9px 0 5px;font-weight:760;letter-spacing:-1px}
+    .cr-rooms-heading p,.cr-room-detail-head p{color:#a99ab4;margin:0 0 24px;font-size:13px}
+    .cr-room-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:17px}
+    .cr-room-tile{min-width:0;padding:0;border:1px solid rgba(212,173,236,.15);border-radius:23px;overflow:hidden;background:linear-gradient(150deg,#2a2234,#191521);text-align:left;color:inherit;cursor:pointer;transition:transform .25s,border-color .25s,box-shadow .25s}
+    .cr-room-tile:hover{transform:translateY(-4px);border-color:rgba(207,157,242,.45);box-shadow:0 16px 45px #09061166}
+    .cr-room-tile-art{height:clamp(155px,17vw,220px);position:relative;display:grid;place-items:center;background:radial-gradient(ellipse at 55% 70%,#65477580,transparent 65%),linear-gradient(140deg,#393047,#1c1827);overflow:hidden}
+    .cr-room-tile-art>ha-icon{--mdc-icon-size:88px;color:#d2b7e5;filter:drop-shadow(0 15px 20px #0e0715)}
+    .cr-room-tile-art img,.cr-room-detail-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+    .cr-room-tile-art:has(img) > ha-icon,.cr-room-detail-art:has(img) > ha-icon{position:absolute;opacity:0;pointer-events:none}
+    .cr-room-tile-art:has(img[style*="display: none"]) > ha-icon,.cr-room-detail-art:has(img[style*="display: none"]) > ha-icon{opacity:1}
+    .cr-room-tile-art:after{content:"";position:absolute;inset:35% 0 0;background:linear-gradient(transparent,rgba(14,9,20,.48));pointer-events:none}
+    .cr-room-lit .cr-room-tile-art img{filter:brightness(1.1) saturate(1.08)}
+    .cr-room-visual-editor{margin:16px 0 22px;padding:22px;border:1px solid #cba7e344;border-radius:20px;background:linear-gradient(145deg,#31243f,#201a2c)}
+    .cr-room-visual-head h2{margin:8px 0;font-size:23px}.cr-room-visual-head p{font-size:12px;color:#b9a9c8}
+    .cr-room-visual-row{display:grid;grid-template-columns:minmax(130px,1fr) minmax(130px,1fr);gap:10px;padding:12px 0;border-bottom:1px solid #ffffff13}
+    .cr-room-visual-row strong{display:flex;align-items:center;gap:7px;font-size:13px}.cr-room-visual-row strong ha-icon{--mdc-icon-size:19px}
+    .cr-room-visual-row select,.cr-room-visual-row input{min-width:0;padding:10px;background:#30263c;border:1px solid #ffffff28;border-radius:10px;color:white}
+    .cr-room-visual-row input{grid-column:1/-1}
+    .cr-room-visual-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+    .cr-room-visual-actions button{padding:11px 18px;border:1px solid #cba7e344;border-radius:10px;background:#4a365e;color:white;cursor:pointer}
+    .cr-room-visual-actions button:last-child{background:#9569b7}
+    @container(max-width:470px){.cr-room-visual-row{grid-template-columns:1fr}.cr-room-visual-row input{grid-column:auto}}
+    .cr-room-tile-arrow{position:absolute;right:14px;top:14px;border-radius:50%;background:#ffffff22;padding:8px;display:flex}
+    .cr-room-tile-arrow ha-icon{--mdc-icon-size:17px}
+    .cr-room-tile-body{padding:18px 19px 17px}
+    .cr-room-tile-body h2{font-size:18px;margin:0 0 5px}
+    .cr-room-tile-body p{font-size:12px;color:#afa2bc;margin:0 0 18px}
+    .cr-room-tile-footer{display:flex;align-items:center;gap:8px;color:#c9bed0;font-size:11px;border-top:1px solid #ffffff15;padding-top:13px}
+    .cr-room-led{height:7px;width:7px;border-radius:50%;background:#716878}
+    .cr-room-led.active{background:#eabf82;box-shadow:0 0 11px #eabf82}
+    .cr-room-lit .cr-room-tile-art{background:radial-gradient(ellipse at 55% 75%,#aa7c6480,transparent 65%),linear-gradient(140deg,#453344,#1c1827)}
+    .cr-room-back,.cr-room-image-edit{border:1px solid #ffffff25;background:#ffffff0a;color:#e8ddeb;border-radius:12px;padding:10px 13px;display:inline-flex;gap:8px;align-items:center;cursor:pointer}
+    .cr-room-back ha-icon,.cr-room-image-edit ha-icon{--mdc-icon-size:17px}
+    .cr-room-detail-head{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:23px;flex-wrap:wrap}
+    .cr-room-detail-hero{display:grid;grid-template-columns:minmax(160px,1fr) minmax(170px,1fr);gap:22px;align-items:center;padding:20px;border-radius:22px;border:1px solid #ffffff20;background:linear-gradient(120deg,#33283e,#201a2b);margin-bottom:22px}
+    .cr-room-detail-art{height:230px;display:grid;place-items:center;border-radius:17px;overflow:hidden;background:radial-gradient(ellipse,#654875,#282032)}
+    .cr-room-detail-art>ha-icon{--mdc-icon-size:115px;color:#d8bce7}
+    .cr-room-detail-hero span{font-size:10px;letter-spacing:1.8px;color:#bba8c7}
+    .cr-room-detail-hero h2{font-size:25px;margin:10px 0}
+    .cr-room-detail-hero p{color:#b8a8c2;font-size:13px}
+    .cr-room-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}
+    .cr-room-actions button,.cr-room-image-form button{background:#8b65a8;color:white;border:0;border-radius:10px;padding:10px 15px;cursor:pointer}
+    .cr-room-actions button:disabled{opacity:.4;cursor:default}
+    .cr-room-sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:14px}
+    .cr-room-section{background:#ffffff08;border:1px solid #ffffff17;border-radius:17px;padding:17px;min-width:0}
+    .cr-room-section header{display:flex;align-items:center;gap:9px;padding-bottom:14px;border-bottom:1px solid #ffffff17}
+    .cr-room-section header ha-icon{color:#bba0d3;--mdc-icon-size:20px}
+    .cr-room-section header span{margin-left:auto;color:#a9a0b2;font-size:12px}
+    .cr-room-device{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:12px 0;border-bottom:1px solid #ffffff0c}
+    .cr-room-device strong{display:block;font-size:12px;overflow-wrap:anywhere}
+    .cr-room-device small{display:block;color:#b0a4bb;margin-top:4px;font-size:11px}
+    .cr-room-device button{background:none;color:#d7b6e9;border:0;cursor:pointer}
+    .cr-room-empty{color:#998fa3;font-size:12px}
+    .cr-room-empty-state{padding:65px 20px;text-align:center;color:#b7a8c4}
+    .cr-room-empty-state>ha-icon{--mdc-icon-size:50px}
+    .cr-room-image-form{background:#ffffff0b;border:1px solid #ffffff20;border-radius:15px;padding:17px;margin-bottom:17px;display:grid;gap:10px}
+    .cr-room-image-form label{font-size:12px;color:#c5b5d2}
+    .cr-room-image-form input{width:100%;min-width:0;border:1px solid #ffffff30;border-radius:10px;padding:12px;background:#18131f;color:white}
+    .cr-room-image-form>div{display:flex;gap:10px}
+    @media(max-width:640px){.cr-room-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cr-room-tile-art{height:130px}.cr-room-tile-art>ha-icon{--mdc-icon-size:62px}.cr-room-tile-body{padding:12px}.cr-room-tile-body h2{font-size:14px}.cr-room-tile-body p,.cr-room-tile-footer{font-size:10px}.cr-room-detail-hero{grid-template-columns:1fr}.cr-room-detail-art{height:190px}}
+    @media(max-width:350px){.cr-room-grid{grid-template-columns:1fr}}
+    @media(prefers-reduced-motion:reduce){.cr-room-tile{transition:none}}
+
     :host {
       display: block;
       width: 100%;
@@ -2512,6 +2732,36 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "lightAreas", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "allEntityAreas", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomDetail", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomImages", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomImageEditor", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomStyle", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomAutoSwitch", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomStyleByArea", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomPhotoUrls", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomStyleEditor", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "roomImageDraft", void 0);
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "labelOptions", void 0);
