@@ -66,6 +66,26 @@ const t=t=>(e,o)=>{ void 0!==o?o.addInitializer(()=>{customElements.define(t,e);
  * SPDX-License-Identifier: BSD-3-Clause
  */const o={attribute:true,type:String,converter:u$1,reflect:false,hasChanged:f$1},r=(t=o,e,r)=>{const{kind:n,metadata:i}=r;let s=globalThis.litPropertyMetadata.get(i);if(void 0===s&&globalThis.litPropertyMetadata.set(i,s=new Map),"setter"===n&&((t=Object.create(t)).wrapped=true),s.set(r.name,t),"accessor"===n){const{name:o}=r;return {set(r){const n=e.get.call(this);e.set.call(this,r),this.requestUpdate(o,n,t,true,r);},init(e){return void 0!==e&&this.C(o,void 0,t,e),e}}}if("setter"===n){const{name:o}=r;return function(r){const n=this[o];e.call(this,r),this.requestUpdate(o,n,t,true,r);}}throw Error("Unsupported decorator location: "+n)};function n(t){return (e,o)=>"object"==typeof o?r(t,e,o):((t,e,o)=>{const r=e.hasOwnProperty(o);return e.constructor.createProperty(o,t),r?Object.getOwnPropertyDescriptor(e,o):void 0})(t,e,o)}
 
+const translations = {
+    en: {
+        welcome: "Welcome to ControlRoom",
+        description: "Your intelligent Home Assistant experience starts here.",
+        connected: "Home Assistant connected",
+        waiting: "Waiting for Home Assistant"
+    },
+    de: {
+        welcome: "Willkommen bei ControlRoom",
+        description: "Dein intelligentes Home-Assistant-Erlebnis beginnt hier.",
+        connected: "Mit Home Assistant verbunden",
+        waiting: "Warte auf Home Assistant"
+    },
+    pt: {
+        welcome: "Bem-vindo ao ControlRoom",
+        description: "Sua experiência inteligente com o Home Assistant começa aqui.",
+        connected: "Conectado ao Home Assistant",
+        waiting: "Aguardando o Home Assistant"
+    }
+};
 let ControlRoomDashboard = class ControlRoomDashboard extends i {
     constructor() {
         super(...arguments);
@@ -77,24 +97,33 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     getCardSize() {
         return 6;
     }
+    getLanguage() {
+        const language = (this.hass?.language || "en").toLowerCase().split(/[-_]/)[0];
+        if (language === "de" || language === "pt") {
+            return language;
+        }
+        return "en";
+    }
+    t(key) {
+        return translations[this.getLanguage()][key];
+    }
     render() {
         const connected = Boolean(this.hass);
         return b `
       <section class="dashboard">
-        <div class="brand">ControlRoom Dashboard</div>
+        <div class="brand">
+          ControlRoom Dashboard
+        </div>
 
-        <h1>Welcome to ControlRoom</h1>
+        <h1>${this.t("welcome")}</h1>
 
-        <p>
-          Your intelligent Home Assistant experience
-          starts here.
-        </p>
+        <p>${this.t("description")}</p>
 
         <div class="status">
           <span class="dot"></span>
           ${connected
-            ? "Home Assistant connected"
-            : "Waiting for Home Assistant"}
+            ? this.t("connected")
+            : this.t("waiting")}
         </div>
       </section>
     `;
