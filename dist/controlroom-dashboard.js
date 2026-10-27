@@ -844,17 +844,30 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     renderLightsCard() {
         const lights = this.getLights();
         const on = lights.filter(l => l.state === "on").length;
-        const off = lights.filter(l => l.state === "off").length;
+        const available = lights.filter(l => l.state === "on" || l.state === "off").length;
         const lit = lights.filter(l => l.state === "on");
         const avg = lit.length ? lit.reduce((n, l) => n + this.getBrightness(l), 0) / lit.length : 0;
+        const language = this.getLanguage();
+        const mood = on === 0
+            ? (language === "de" ? "Alles ruhig" : language === "pt" ? "Tudo tranquilo" : "Peaceful")
+            : on === available
+                ? (language === "de" ? "Alles erstrahlt" : language === "pt" ? "Tudo iluminado" : "All illuminated")
+                : (language === "de" ? "Gemütlich" : language === "pt" ? "Aconchegante" : "Cozy ambience");
+        const countLabel = language === "de"
+            ? `${on} von ${available} Lichtern an`
+            : language === "pt"
+                ? `${on} de ${available} luzes acesas`
+                : `${on} of ${available} lights on`;
         return b `
       <article class="overview-card lights-card premium-lights ${on ? "has-light" : ""}">
         <div class="pendant-corner">${this.renderPendant(on > 0, avg)}</div>
         <div class="premium-lights-content">
           <div class="card-icon">${this.renderIcon("mdi:lightbulb-on-outline")}</div>
           <div class="card-title">${this.t("lights")}</div>
-          <div class="premium-count"><strong>${on}</strong> ${this.t("lightsOn")}
-            <span>· ${off} ${this.t("lightsOff")}</span>
+          <div class="premium-mood">${mood}</div>
+          <div class="premium-light-status">
+            <span class="premium-status-dot ${on ? "lit" : ""}"></span>
+            <span>${countLabel}</span>
           </div>
           <div class="premium-actions">
             <button type="button" class="glass-action" ?disabled=${!on || !this.hass?.callService}
@@ -1566,6 +1579,11 @@ ControlRoomDashboard.styles = i$3 `
     .premium-count { font-size:13px; color:#c9bed1; }
     .premium-count strong { font-size:28px; color:#fff; }
     .premium-count span { color:#a99caf; }
+    /* Home overview: atmosphere first, subtle live light count below. */
+    .premium-mood { font-size:clamp(17px,1.6vw,21px);font-weight:750;letter-spacing:-.045em;line-height:1.12;color:#fff3f8;max-width:calc(100% - 48px);text-shadow:0 1px 16px rgba(0,0,0,.18); }
+    .premium-light-status { display:flex;align-items:center;gap:7px;min-width:0;font-size:10px;line-height:1.3;color:#b9adc5;white-space:nowrap; }
+    .premium-status-dot { flex:none;width:6px;height:6px;border-radius:50%;background:#81748b; }
+    .premium-status-dot.lit { background:#f3c384;box-shadow:0 0 10px rgba(245,193,118,.55); }
     .premium-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:auto; }
     .glass-action { display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 11px; color:#eee2f5; background:rgba(145,109,174,.25); border:1px solid rgba(211,173,239,.2); border-radius:999px; cursor:pointer; font-size:11px; }
     .glass-action:disabled { opacity:.45; cursor:not-allowed; }
