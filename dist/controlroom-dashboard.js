@@ -68,22 +68,46 @@ const t=t=>(e,o)=>{ void 0!==o?o.addInitializer(()=>{customElements.define(t,e);
 
 const translations = {
     en: {
-        welcome: "Welcome to ControlRoom",
-        description: "Your intelligent Home Assistant experience starts here.",
+        welcome: "Welcome home",
+        subtitle: "Your intelligent home, beautifully connected.",
         connected: "Home Assistant connected",
-        waiting: "Waiting for Home Assistant"
+        waiting: "Waiting for Home Assistant",
+        overview: "Overview",
+        rooms: "Rooms",
+        people: "People",
+        energy: "Energy",
+        security: "Security",
+        media: "Media",
+        comingSoon: "Your ControlRoom experience is taking shape.",
+        foundation: "Dashboard foundation"
     },
     de: {
-        welcome: "Willkommen bei ControlRoom",
-        description: "Dein intelligentes Home-Assistant-Erlebnis beginnt hier.",
+        welcome: "Willkommen zu Hause",
+        subtitle: "Dein intelligentes Zuhause. Alles verbunden.",
         connected: "Mit Home Assistant verbunden",
-        waiting: "Warte auf Home Assistant"
+        waiting: "Warte auf Home Assistant",
+        overview: "Übersicht",
+        rooms: "Räume",
+        people: "Personen",
+        energy: "Energie",
+        security: "Sicherheit",
+        media: "Medien",
+        comingSoon: "Dein ControlRoom nimmt Gestalt an.",
+        foundation: "Dashboard-Grundstruktur"
     },
     pt: {
-        welcome: "Bem-vindo ao ControlRoom",
-        description: "Sua experiência inteligente com o Home Assistant começa aqui.",
+        welcome: "Bem-vindo à sua casa",
+        subtitle: "Sua casa inteligente, perfeitamente conectada.",
         connected: "Conectado ao Home Assistant",
-        waiting: "Aguardando o Home Assistant"
+        waiting: "Aguardando o Home Assistant",
+        overview: "Visão geral",
+        rooms: "Ambientes",
+        people: "Pessoas",
+        energy: "Energia",
+        security: "Segurança",
+        media: "Multimídia",
+        comingSoon: "Seu ControlRoom está tomando forma.",
+        foundation: "Estrutura do dashboard"
     }
 };
 let ControlRoomDashboard = class ControlRoomDashboard extends i {
@@ -95,37 +119,79 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.config = config;
     }
     getCardSize() {
-        return 6;
+        return 12;
     }
     getLanguage() {
-        const language = (this.hass?.language || "en").toLowerCase().split(/[-_]/)[0];
-        if (language === "de" || language === "pt") {
-            return language;
-        }
-        return "en";
+        const language = (this.hass?.language || "en")
+            .toLowerCase()
+            .split(/[-_]/)[0];
+        return language === "de" || language === "pt"
+            ? language
+            : "en";
     }
     t(key) {
         return translations[this.getLanguage()][key];
     }
     render() {
         const connected = Boolean(this.hass);
+        const modules = [
+            { key: "overview", icon: "⌂" },
+            { key: "rooms", icon: "▦" },
+            { key: "people", icon: "♙" },
+            { key: "energy", icon: "ϟ" },
+            { key: "security", icon: "◇" },
+            { key: "media", icon: "♫" }
+        ];
         return b `
-      <section class="dashboard">
-        <div class="brand">
-          ControlRoom Dashboard
-        </div>
+      <main class="dashboard">
+        <header class="header">
+          <div class="brand">
+            <div class="logo">C</div>
+            <div>
+              <div class="brand-name">ControlRoom</div>
+              <div class="brand-subtitle">
+                Smart Home Dashboard
+              </div>
+            </div>
+          </div>
 
-        <h1>${this.t("welcome")}</h1>
-
-        <p>${this.t("description")}</p>
-
-        <div class="status">
-          <span class="dot"></span>
-          ${connected
+          <div class="status">
+            <span class="dot"></span>
+            ${connected
             ? this.t("connected")
             : this.t("waiting")}
-        </div>
-      </section>
+          </div>
+        </header>
+
+        <section class="content">
+          <div class="eyebrow">
+            ${this.t("foundation")}
+          </div>
+
+          <h1>${this.t("welcome")}</h1>
+
+          <p class="subtitle">
+            ${this.t("subtitle")}
+          </p>
+
+          <div class="modules">
+            ${modules.map((module) => b `
+                <div class="module">
+                  <div class="module-icon">
+                    ${module.icon}
+                  </div>
+                  <div class="module-title">
+                    ${this.t(module.key)}
+                  </div>
+                </div>
+              `)}
+          </div>
+
+          <div class="footer">
+            ${this.t("comingSoon")}
+          </div>
+        </section>
+      </main>
     `;
     }
 };
@@ -133,54 +199,173 @@ ControlRoomDashboard.styles = i$3 `
     :host {
       display: block;
       width: 100%;
+      min-height: calc(100dvh - 56px);
       box-sizing: border-box;
       font-family: -apple-system, BlinkMacSystemFont,
         "Segoe UI", sans-serif;
     }
 
+    * {
+      box-sizing: border-box;
+    }
+
     .dashboard {
+      min-height: calc(100dvh - 56px);
       padding: 28px;
-      border-radius: 24px;
-      background: #15151e;
-      color: #ffffff;
-      border: 1px solid #30303d;
+      color: #f7f7fa;
+      background:
+        radial-gradient(
+          ellipse at 85% 0%,
+          rgba(91, 76, 133, 0.18),
+          transparent 45%
+        ),
+        #101017;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 22px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 20px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
     }
 
     .brand {
-      font-size: 14px;
-      font-weight: 600;
-      color: #a7a3b5;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 13px;
     }
 
-    h1 {
-      margin: 18px 0 8px;
-      font-size: 30px;
-      font-weight: 650;
+    .logo {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: linear-gradient(
+        135deg,
+        #8876b7,
+        #51466e
+      );
+      font-size: 23px;
+      font-weight: 700;
     }
 
-    p {
-      color: #aaa9b8;
-      font-size: 15px;
+    .brand-name {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: #a8a5b8;
+      margin-top: 3px;
     }
 
     .status {
-      display: inline-flex;
+      display: flex;
       align-items: center;
       gap: 9px;
-      margin-top: 18px;
       padding: 11px 15px;
-      border-radius: 12px;
-      background: #242530;
-      font-size: 13px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: #d7d5e0;
+      font-size: 12px;
     }
 
     .dot {
-      width: 9px;
-      height: 9px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: #38d39f;
+      background: #43d6a0;
+      box-shadow: 0 0 12px rgba(67,214,160,0.35);
+    }
+
+    .content {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding-top: 40px;
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #aaa2c9;
+    }
+
+    h1 {
+      margin: 13px 0 10px;
+      font-size: clamp(30px, 4vw, 48px);
+      font-weight: 700;
+      letter-spacing: -0.045em;
+    }
+
+    .subtitle {
+      margin: 0;
+      font-size: 15px;
+      color: #aaa8b9;
+    }
+
+    .modules {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 38px;
+    }
+
+    .module {
+      min-height: 150px;
+      padding: 24px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.035);
+      border: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .module-icon {
+      font-size: 25px;
+    }
+
+    .module-title {
+      font-size: 16px;
+      font-weight: 650;
+    }
+
+    .footer {
+      margin-top: 45px;
+      font-size: 12px;
+      color: #777587;
+    }
+
+    @media (max-width: 900px) {
+      .modules {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 550px) {
+      .dashboard {
+        padding: 18px;
+        border-radius: 0;
+      }
+
+      .modules {
+        grid-template-columns: 1fr;
+      }
+
+      .content {
+        padding-top: 30px;
+      }
     }
   `;
 __decorate([
