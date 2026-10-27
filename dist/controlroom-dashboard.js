@@ -1620,6 +1620,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             { id: "blue", name: "Midnight Blue", accent: "#559cff", bg: "#0c1628", surface: "#1c304b", text: "#f5f8ff" },
             { id: "emerald", name: "Emerald", accent: "#43c6a0", bg: "#0c1b19", surface: "#1c3530", text: "#f2fff9" },
             { id: "burgundy", name: "Burgundy", accent: "#ce6c90", bg: "#221219", surface: "#3a222d", text: "#fff4f7" },
+            { id: "rose-noir", name: "Rose Noir", accent: "#e3a04b", bg: "#190d17", surface: "#301823", text: "#fff1f4" },
             { id: "gold", name: "Champagne Gold", accent: "#b8ab92", bg: "#1b1b1a", surface: "#2c2b29", text: "#fff9ed" },
             { id: "pearl", name: "Pearl White", accent: "#7664a9", bg: "#f5f3f8", surface: "#ffffff", text: "#30283a" },
             { id: "obsidian", name: "Obsidian", accent: "#b6b9c2", bg: "#101114", surface: "#25272c", text: "#f6f6f8" }
@@ -1651,7 +1652,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             return "";
         };
         const ha = this.crThemeSource === "ha";
-        const fallback = ha ? (dark ? { accent: "#75a7dc", bg: "#141a22", surface: "#252d37", text: "#f4f6fa", muted: "#b7c0cc" } : { accent: "#386da6", bg: "#f5f6f9", surface: "#ffffff", text: "#202733", muted: "#586474" }) : { accent: p.accent, bg: p.bg, surface: p.surface, text: p.text, muted: this.crTheme === "pearl" ? "#746c80" : "#b9b2c6" };
+        const fallback = ha ? (dark ? { accent: "#75a7dc", bg: "#141a22", surface: "#252d37", text: "#f4f6fa", muted: "#b7c0cc" } : { accent: "#386da6", bg: "#f5f6f9", surface: "#ffffff", text: "#202733", muted: "#586474" }) : { accent: p.accent, bg: p.bg, surface: p.surface, text: p.text, muted: this.crIsLightColor(p.bg) ? "#746c80" : "#b9b2c6" };
         const pick = (defaultValue, ...keys) => ha ? (cssValue(...keys) || defaultValue) : defaultValue;
         const accent = pick(fallback.accent, "accent-color", "primary-color", "state-icon-color");
         const bg = pick(fallback.bg, "primary-background-color", "lovelace-background");
@@ -1659,8 +1660,21 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const fg = pick(fallback.text, "primary-text-color");
         const muted = pick(fallback.muted, "secondary-text-color");
         const radius = this.crThemeStyle === "minimal" ? "9px" : this.crThemeStyle === "solid" ? "15px" : "22px";
-        const isLight = ha ? (!dark && (!raw || !cssValue("primary-background-color") || this.crIsLightColor(bg)) || this.crIsLightColor(bg)) : this.crTheme === "pearl";
+        const isLight = ha ? this.crIsLightColor(bg) : this.crIsLightColor(bg);
         return `--cr-accent:${accent};--cr-bg:${bg};--cr-surface:${surface};--cr-text:${fg};--cr-muted:${muted};--cr-is-light:${isLight ? 1 : 0};--cr-radius:${radius};--cr-blur:${this.crThemeStyle === "glass" ? "blur(22px)" : "none"};--primary-color:${accent};--accent-color:${accent};--primary-text-color:${fg};--secondary-text-color:${muted};--primary-background-color:${bg};--card-background-color:${surface};--paper-item-icon-color:${accent};--state-icon-color:${accent};--mdc-theme-primary:${accent};`;
+    }
+    crThemeIsLight() {
+        const p = this.crPalettes().find(p => p.id === this.crTheme) || this.crPalettes()[0];
+        if (this.crThemeSource !== "ha")
+            return this.crIsLightColor(p.bg);
+        const registry = this.hass?.themes;
+        const selected = this.crHATheme || registry?.theme || "";
+        const raw = registry?.themes?.[selected];
+        const dark = this.crHAMode === "auto" ? (registry?.darkMode ?? false) : this.crHAMode === "dark";
+        const modes = raw?.["modes"];
+        const mode = (modes?.[dark ? "dark" : "light"] || raw?.[dark ? "dark" : "light"] || {});
+        const bg = mode["primary-background-color"] || raw?.["primary-background-color"] || mode["lovelace-background"] || raw?.["lovelace-background"];
+        return typeof bg === "string" && /^#[0-9a-f]{3,6}$/i.test(bg) ? this.crIsLightColor(bg) : !dark;
     }
     crIsLightColor(color) {
         const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
@@ -1884,7 +1898,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
     render() {
         return b `
-      <div class=${`dashboard cr-theme-${this.crThemeStyle} ${(this.crThemeSource === "controlroom" ? this.crTheme === "pearl" : (this.crHAMode === "light" || (this.crHAMode === "auto" && !(this.hass?.themes?.darkMode)))) ? "cr-theme-light" : ""}`} style=${this.crThemeVars()}>
+      <div class=${`dashboard cr-theme-${this.crThemeStyle} ${this.crThemeIsLight() ? "cr-theme-light" : ""}`} style=${this.crThemeVars()}>
         ${this.renderSidebar()}
 
         <main class="main">
@@ -2982,6 +2996,26 @@ ControlRoomDashboard.styles = i$3 `
     .dashboard.cr-theme-light .sidebar,.dashboard.cr-theme-light .main,.dashboard.cr-theme-light .settings-center{color:var(--cr-text)!important}
     .dashboard.cr-theme-light .settings-option,.dashboard.cr-theme-light .overview-card,.dashboard.cr-theme-light .cr-room-section{background:color-mix(in srgb,var(--cr-surface) 92%,var(--cr-bg))!important}
     .dashboard.cr-theme-light .studio-mood,.dashboard.cr-theme-light .studio-mood-subtitle,.dashboard.cr-theme-light .nav-item,.dashboard.cr-theme-light .settings-note{color:var(--cr-text)!important}
+
+    /* V9: one scoped color system; no global HA theme mutation */
+    .dashboard { color:var(--cr-text)!important; background:var(--cr-bg)!important; }
+    .dashboard .sidebar {background:color-mix(in srgb,var(--cr-bg) 74%,var(--cr-surface))!important;border-color:color-mix(in srgb,var(--cr-text) 10%,transparent)!important}
+    .dashboard .main {background:var(--cr-bg)!important;color:var(--cr-text)!important}
+    .dashboard .topbar,.dashboard .topbar-left,.dashboard .cr-theme-studio,.dashboard .settings-center {color:var(--cr-text)!important}
+    .dashboard .nav-item.active,.dashboard .settings-nav-item.active {background:color-mix(in srgb,var(--cr-accent) 22%,var(--cr-surface))!important;border-color:var(--cr-accent)!important;color:var(--cr-accent)!important}
+    .dashboard .nav-item.active ha-icon,.dashboard .nav-item.active svg {color:var(--cr-accent)!important}
+    .dashboard .studio-mood,.dashboard .studio-mood-subtitle,.dashboard .settings-intro h1,.dashboard .page-heading,.dashboard .cr-rooms-heading h1,.dashboard .cr-room-tile-body h2,.dashboard .settings-search input {color:var(--cr-text)!important}
+    .dashboard .studio-hero,.dashboard .lighting-preferences {background:linear-gradient(120deg,color-mix(in srgb,var(--cr-accent) 13%,var(--cr-surface)),var(--cr-bg))!important;border-color:color-mix(in srgb,var(--cr-accent) 20%,transparent)!important}
+    .dashboard .studio-hero.lit {background:radial-gradient(ellipse at 80% 75%,color-mix(in srgb,var(--cr-accent) 16%,transparent),transparent 58%),linear-gradient(120deg,var(--cr-surface),var(--cr-bg))!important}
+    .dashboard .overview-card,.dashboard .studio-room-card,.dashboard .cr-room-tile,.dashboard .cr-room-section,.dashboard .cr-room-device,.dashboard .settings-option,.dashboard .cr-theme-choice,.dashboard .cr-theme-style-list button {background:color-mix(in srgb,var(--cr-surface) 91%,var(--cr-bg))!important;color:var(--cr-text)!important;border-color:color-mix(in srgb,var(--cr-text) 12%,transparent)!important}
+    .dashboard .overview-card ha-icon,.dashboard .studio-room-card ha-icon,.dashboard .cr-room-device ha-icon,.dashboard .cr-theme-studio ha-icon {color:var(--cr-accent)}
+    .dashboard .cr-theme-choice.chosen,.dashboard .cr-theme-style-list button.chosen {border-color:var(--cr-accent)!important;box-shadow:0 0 0 1px var(--cr-accent)!important}
+    .dashboard .settings-save,.dashboard .cr-theme-actions button:last-child {background:var(--cr-accent)!important;color:var(--cr-bg)!important}
+    .dashboard .settings-cancel,.dashboard .cr-theme-actions button:first-child {background:var(--cr-surface)!important;color:var(--cr-text)!important}
+    .dashboard .settings-note,.dashboard .overview-card small,.dashboard .studio-mood-subtitle {color:var(--cr-muted)!important}
+    .dashboard .cr-room-detail-art {position:relative!important;overflow:hidden!important}
+    .dashboard .cr-room-detail-art img {max-width:100%!important;max-height:100%!important}
+
 `;
 __decorate([
     n({ attribute: false })
