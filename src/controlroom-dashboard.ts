@@ -3,6 +3,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 
 interface HomeAssistant {
+  language?: string;
   states: Record<string, unknown>;
   user?: {
     name?: string;
@@ -25,6 +26,43 @@ declare global {
   }
 }
 
+type TranslationKey =
+  | "welcome"
+  | "description"
+  | "connected"
+  | "waiting";
+
+type SupportedLanguage = "en" | "de" | "pt";
+
+const translations: Record<
+  SupportedLanguage,
+  Record<TranslationKey, string>
+> = {
+  en: {
+    welcome: "Welcome to ControlRoom",
+    description:
+      "Your intelligent Home Assistant experience starts here.",
+    connected: "Home Assistant connected",
+    waiting: "Waiting for Home Assistant"
+  },
+
+  de: {
+    welcome: "Willkommen bei ControlRoom",
+    description:
+      "Dein intelligentes Home-Assistant-Erlebnis beginnt hier.",
+    connected: "Mit Home Assistant verbunden",
+    waiting: "Warte auf Home Assistant"
+  },
+
+  pt: {
+    welcome: "Bem-vindo ao ControlRoom",
+    description:
+      "Sua experiência inteligente com o Home Assistant começa aqui.",
+    connected: "Conectado ao Home Assistant",
+    waiting: "Aguardando o Home Assistant"
+  }
+};
+
 @customElement("controlroom-dashboard")
 export class ControlRoomDashboard extends LitElement {
   @property({ attribute: false })
@@ -39,6 +77,22 @@ export class ControlRoomDashboard extends LitElement {
 
   public getCardSize(): number {
     return 6;
+  }
+
+  private getLanguage(): SupportedLanguage {
+    const language = (
+      this.hass?.language || "en"
+    ).toLowerCase().split(/[-_]/)[0];
+
+    if (language === "de" || language === "pt") {
+      return language;
+    }
+
+    return "en";
+  }
+
+  private translate(key: TranslationKey): string {
+    return translations[this.getLanguage()][key];
   }
 
   static styles = css`
@@ -101,20 +155,23 @@ export class ControlRoomDashboard extends LitElement {
 
     return html`
       <section class="dashboard">
-        <div class="brand">ControlRoom Dashboard</div>
+        <div class="brand">
+          ControlRoom Dashboard
+        </div>
 
-        <h1>Welcome to ControlRoom</h1>
+        <h1>
+          ${this.translate("welcome")}
+        </h1>
 
         <p>
-          Your intelligent Home Assistant experience
-          starts here.
+          ${this.translate("description")}
         </p>
 
         <div class="status">
           <span class="dot"></span>
           ${connected
-            ? "Home Assistant connected"
-            : "Waiting for Home Assistant"}
+            ? this.translate("connected")
+            : this.translate("waiting")}
         </div>
       </section>
     `;
