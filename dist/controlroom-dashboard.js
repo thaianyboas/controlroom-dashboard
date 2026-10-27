@@ -1618,7 +1618,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             { id: "blue", name: "Midnight Blue", accent: "#559cff", bg: "#0c1628", surface: "#1c304b", text: "#f5f8ff" },
             { id: "emerald", name: "Emerald", accent: "#43c6a0", bg: "#0c1b19", surface: "#1c3530", text: "#f2fff9" },
             { id: "burgundy", name: "Burgundy", accent: "#ce6c90", bg: "#221219", surface: "#3a222d", text: "#fff4f7" },
-            { id: "gold", name: "Champagne Gold", accent: "#c5ad87", bg: "#1d1b19", surface: "#302c27", text: "#fff9ed" },
+            { id: "gold", name: "Champagne Gold", accent: "#b8ab92", bg: "#1b1b1a", surface: "#2c2b29", text: "#fff9ed" },
             { id: "pearl", name: "Pearl White", accent: "#7664a9", bg: "#f5f3f8", surface: "#ffffff", text: "#30283a" },
             { id: "obsidian", name: "Obsidian", accent: "#b6b9c2", bg: "#101114", surface: "#25272c", text: "#f6f6f8" }
         ];
@@ -1631,7 +1631,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const dark = registry?.darkMode ?? false;
         const chosen = raw ? (raw[dark ? "dark" : "light"] || raw["light"] || raw["dark"] || raw) : undefined;
         const cssValue = (key) => {
-            const value = chosen?.[key];
+            const value = chosen?.[key] ?? chosen?.[`--${key}`];
             if (typeof value === "string" && value.trim())
                 return value.trim();
             // Read the HA host's computed CSS variables, not our own themed subtree.
@@ -1641,9 +1641,9 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         };
         const ha = this.crThemeSource === "ha";
         const pick = (key, fallback) => ha ? (cssValue(key) || fallback) : fallback;
-        const accent = pick("primary-color", p.accent);
-        const bg = pick("primary-background-color", p.bg);
-        const surface = pick("card-background-color", p.surface);
+        const accent = pick("accent-color", pick("primary-color", p.accent));
+        const bg = pick("primary-background-color", pick("lovelace-background", p.bg));
+        const surface = pick("card-background-color", pick("ha-card-background", p.surface));
         const fg = pick("primary-text-color", p.text);
         const muted = pick("secondary-text-color", this.crTheme === "pearl" ? "#746c80" : "#b9b2c6");
         const radius = this.crThemeStyle === "minimal" ? "9px" : this.crThemeStyle === "solid" ? "15px" : "22px";
@@ -2628,9 +2628,9 @@ ControlRoomDashboard.styles = i$3 `
     .studio-light .studio-toggle { position:static;flex:none;display:grid;place-items:center;padding:3px; }
     .studio-light-state-inline,.studio-light-room { display:block;margin:5px 0 0 48px;color:#a99eb6;font-size:11px; }
     .studio-inline-brightness { display:flex;align-items:center;gap:11px;margin:12px 0 0 48px;min-width:0; }
-    .studio-inline-slider { flex:1;min-width:0;width:100%;height:4px;margin:0;accent-color:#c8a0e6;cursor:pointer; }
+    .studio-inline-slider { flex:1;min-width:0;width:100%;height:4px;margin:0;accent-color:var(--cr-accent,#c8a0e6);cursor:pointer; }
     .studio-inline-value { min-width:38px;text-align:right;font-size:12px;color:#c8b6d7;font-variant-numeric:tabular-nums; }
-    .studio-color-trigger { display:grid;place-items:center;flex:none;width:26px;height:26px;padding:2px;border:1px solid rgba(215,175,239,.2);border-radius:9px;background:rgba(255,255,255,.045);color:#bda0d2;cursor:pointer; }
+    .studio-color-trigger { display:grid;place-items:center;flex:none;width:26px;height:26px;padding:2px;border:1px solid rgba(215,175,239,.2);border-radius:9px;background:rgba(255,255,255,.045);color:var(--cr-accent,#bda0d2);cursor:pointer; }
     .studio-color-trigger ha-icon { --mdc-icon-size:17px; }
     .studio-color-trigger.open { background:rgba(171,122,206,.25);border-color:rgba(215,175,239,.45); }
     .studio-color-alone { margin:9px 0 0 48px; }
@@ -2750,7 +2750,7 @@ ControlRoomDashboard.styles = i$3 `
     .settings-save-copy small {font-size:11px;color:#c2b0d1;line-height:1.4}
     .settings-cancel,.settings-save {display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 14px;border-radius:11px;border:1px solid rgba(213,174,239,.23);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
     .settings-cancel {background:rgba(255,255,255,.05);color:#dfd2e9}
-    .settings-save {background:linear-gradient(120deg,#a579ce,#8059ac);color:white;border-color:rgba(233,204,255,.4)}
+    .settings-save {background:linear-gradient(120deg,var(--cr-accent,#a579ce),color-mix(in srgb,var(--cr-accent,#8059ac) 70%,black));color:white;border-color:rgba(233,204,255,.4)}
     .settings-save:disabled {opacity:.45;cursor:not-allowed}
     .settings-save-bar ha-icon {--mdc-icon-size:17px}
     @media(max-width:500px){.settings-save-bar{bottom:8px;padding:12px}.settings-save-copy{flex-basis:100%}.settings-cancel,.settings-save{flex:1}}
@@ -2865,12 +2865,25 @@ ControlRoomDashboard.styles = i$3 `
     .dashboard .smart-bar{background:color-mix(in srgb,var(--cr-surface) 90%,transparent)!important}
     .dashboard .cr-room-tile-art{background:color-mix(in srgb,var(--cr-surface) 76%,var(--cr-bg))!important}
     .dashboard .cr-room-tile-art img.cr-art-3d,.dashboard .cr-room-detail-art img.cr-art-3d{object-fit:contain!important;object-position:center!important;filter:none!important}
-    .dashboard .cr-room-tile-art img.cr-art-photo,.dashboard .cr-room-detail-art img.cr-art-photo{object-fit:cover!important;object-position:center!important;filter:none!important}
+    .dashboard .cr-room-tile-art img.cr-art-photo,.dashboard .cr-room-detail-art img.cr-art-photo{object-fit:contain!important;object-position:center!important;filter:none!important}
     .dashboard .cr-room-tile-art:after{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--cr-bg) 28%,transparent))!important}
     .dashboard .cr-theme-choice.chosen,.dashboard .cr-theme-style-list button.chosen{border-color:var(--cr-accent)!important}
     .dashboard.cr-theme-solid .smart-bar,.dashboard.cr-theme-solid .cr-room-tile{backdrop-filter:none!important;background:var(--cr-surface)!important}
     .dashboard.cr-theme-minimal .smart-bar,.dashboard.cr-theme-minimal .cr-room-tile{box-shadow:none!important;backdrop-filter:none!important}
     .dashboard.cr-theme-light .cr-room-tile-body,.dashboard.cr-theme-light .settings-option{color:var(--cr-text)!important}
+    /* Theme Studio v4 — dynamic accent across buttons, toggles and lighting */
+    .dashboard .overview-card-icon,.dashboard .card-icon,.dashboard .card-icon-wrap,.dashboard .light-icon,.dashboard .cr-room-tile-arrow,.dashboard .cr-room-actions button:first-child,
+    .dashboard .settings-save,.dashboard .studio-color-trigger,.dashboard .studio-inline-slider,.dashboard .light-toggle.active,.dashboard .toggle.active,
+    .dashboard .segment.active,.dashboard .tab.active,.dashboard .mode-button.active,.dashboard .scene-button.active,
+    .dashboard input[type="range"],.dashboard input[type="checkbox"],.dashboard input[type="radio"]{accent-color:var(--cr-accent)!important}
+    .dashboard .cr-room-actions button:first-child,.dashboard .settings-save{background:var(--cr-accent)!important;border-color:var(--cr-accent)!important;color:var(--cr-bg)!important}
+    .dashboard .cr-room-tile-art,.dashboard .cr-room-detail-art{background:color-mix(in srgb,var(--cr-surface) 80%,var(--cr-bg))!important}
+    .dashboard .cr-room-tile-art img,.dashboard .cr-room-detail-art img{max-width:100%;max-height:100%;object-fit:contain!important}
+    .dashboard .cr-room-tile-art:after{opacity:.25!important}
+    .dashboard .cr-room-lit .cr-room-tile-art{background:color-mix(in srgb,var(--cr-accent) 15%,var(--cr-surface))!important}
+    .dashboard .cr-room-tile-art>ha-icon,.dashboard .cr-room-detail-art>ha-icon{color:var(--cr-accent)!important}
+    .dashboard .cr-room-tile,.dashboard .cr-room-detail-hero{overflow:hidden}
+    .dashboard .cr-room-tile-body,.dashboard .cr-room-tile-footer{background:transparent!important}
     /* Theme Studio v3 — unified icon and control colors */
     .dashboard ha-icon:not(.cr-keep-color),.dashboard .settings-option-icon ha-icon,.dashboard .overview-card ha-icon,.dashboard .nav-item ha-icon,.dashboard .cr-room-section ha-icon{color:var(--cr-accent)!important}
     .dashboard .settings-option-icon,.dashboard .overview-card-icon,.dashboard .card-icon,.dashboard .nav-item.active{color:var(--cr-accent)!important}
