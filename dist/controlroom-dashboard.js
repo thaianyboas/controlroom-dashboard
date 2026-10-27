@@ -386,6 +386,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.crThemeStyle = "glass";
         this.crThemeSource = "controlroom";
         this.crHATheme = "";
+        this.crHAMode = "auto";
         this.crThemeSnapshot = "";
         this.labelOptions = [];
         this.entityLabels = {};
@@ -701,6 +702,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             this.crThemeStyle = v.style || "glass";
             this.crThemeSource = v.source || "controlroom";
             this.crHATheme = v.haTheme || "";
+            this.crHAMode = v.haMode || "auto";
         }
         catch (error) {
             console.warn(error);
@@ -1611,7 +1613,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       </section>
     `;
     }
-    crThemeData() { return { theme: this.crTheme, style: this.crThemeStyle, source: this.crThemeSource, haTheme: this.crHATheme }; }
+    crThemeData() { return { theme: this.crTheme, style: this.crThemeStyle, source: this.crThemeSource, haTheme: this.crHATheme, haMode: this.crHAMode }; }
     crPalettes() {
         return [
             { id: "purple", name: "Royal Purple", accent: "#a477f5", bg: "#111019", surface: "#282037", text: "#f6f3fb" },
@@ -1628,18 +1630,18 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const registry = this.hass?.themes;
         const selected = this.crHATheme || registry?.theme || "";
         const raw = registry?.themes?.[selected];
-        const dark = registry?.darkMode ?? false;
+        const dark = this.crHAMode === "auto" ? (registry?.darkMode ?? false) : this.crHAMode === "dark";
         const modes = raw?.["modes"];
-        const chosen = raw ? { ...raw, ...(modes?.[dark ? "dark" : "light"] || modes?.["light"] || modes?.["dark"] || {}), ...(raw[dark ? "dark" : "light"] || raw["light"] || raw["dark"] || {}) } : undefined;
+        const chosen = raw ? { ...raw, ...(modes?.[dark ? "dark" : "light"] || {}), ...(raw[dark ? "dark" : "light"] || {}) } : undefined;
         const cssValue = (...keys) => {
             for (const key of keys) {
                 const value = chosen?.[key] ?? chosen?.[`--${key}`];
                 if (typeof value === "string" && value.trim())
                     return value.trim();
             }
-            // Only inherit current HA colors when no explicit theme was selected.
-            if (!this.crHATheme) {
-                const host = this.getRootNode() instanceof ShadowRoot ? this.getRootNode().host : document.documentElement;
+            if (!this.crHATheme && this.crHAMode === "auto") {
+                const root = this.getRootNode();
+                const host = root instanceof ShadowRoot ? root.host : document.documentElement;
                 for (const key of keys) {
                     const computed = getComputedStyle(host).getPropertyValue(`--${key}`).trim() || getComputedStyle(document.documentElement).getPropertyValue(`--${key}`).trim();
                     if (computed)
@@ -1649,14 +1651,24 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             return "";
         };
         const ha = this.crThemeSource === "ha";
-        const pick = (fallback, ...keys) => ha ? (cssValue(...keys) || fallback) : fallback;
-        const accent = pick(this.crThemeSource === "ha" ? "#5b86b2" : p.accent, "accent-color", "primary-color", "state-icon-color");
-        const bg = pick(this.crThemeSource === "ha" ? "#171c23" : p.bg, "primary-background-color", "lovelace-background");
-        const surface = pick(this.crThemeSource === "ha" ? "#29313b" : p.surface, "card-background-color", "ha-card-background", "secondary-background-color");
-        const fg = pick(this.crThemeSource === "ha" ? "#f4f5f7" : p.text, "primary-text-color");
-        const muted = pick(this.crThemeSource === "ha" ? "#b8c1cc" : (this.crTheme === "pearl" ? "#746c80" : "#b9b2c6"), "secondary-text-color");
+        const fallback = ha ? (dark ? { accent: "#75a7dc", bg: "#141a22", surface: "#252d37", text: "#f4f6fa", muted: "#b7c0cc" } : { accent: "#386da6", bg: "#f5f6f9", surface: "#ffffff", text: "#202733", muted: "#586474" }) : { accent: p.accent, bg: p.bg, surface: p.surface, text: p.text, muted: this.crTheme === "pearl" ? "#746c80" : "#b9b2c6" };
+        const pick = (defaultValue, ...keys) => ha ? (cssValue(...keys) || defaultValue) : defaultValue;
+        const accent = pick(fallback.accent, "accent-color", "primary-color", "state-icon-color");
+        const bg = pick(fallback.bg, "primary-background-color", "lovelace-background");
+        const surface = pick(fallback.surface, "card-background-color", "ha-card-background", "secondary-background-color");
+        const fg = pick(fallback.text, "primary-text-color");
+        const muted = pick(fallback.muted, "secondary-text-color");
         const radius = this.crThemeStyle === "minimal" ? "9px" : this.crThemeStyle === "solid" ? "15px" : "22px";
-        return `--cr-accent:${accent};--cr-bg:${bg};--cr-surface:${surface};--cr-text:${fg};--cr-muted:${muted};--cr-radius:${radius};--cr-blur:${this.crThemeStyle === "glass" ? "blur(22px)" : "none"};--primary-color:${accent};--accent-color:${accent};--primary-text-color:${fg};--secondary-text-color:${muted};--primary-background-color:${bg};--card-background-color:${surface};--paper-item-icon-color:${accent};--state-icon-color:${accent};--mdc-theme-primary:${accent};`;
+        const isLight = ha ? (!dark && (!raw || !cssValue("primary-background-color") || this.crIsLightColor(bg)) || this.crIsLightColor(bg)) : this.crTheme === "pearl";
+        return `--cr-accent:${accent};--cr-bg:${bg};--cr-surface:${surface};--cr-text:${fg};--cr-muted:${muted};--cr-is-light:${isLight ? 1 : 0};--cr-radius:${radius};--cr-blur:${this.crThemeStyle === "glass" ? "blur(22px)" : "none"};--primary-color:${accent};--accent-color:${accent};--primary-text-color:${fg};--secondary-text-color:${muted};--primary-background-color:${bg};--card-background-color:${surface};--paper-item-icon-color:${accent};--state-icon-color:${accent};--mdc-theme-primary:${accent};`;
+    }
+    crIsLightColor(color) {
+        const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+        if (!hex)
+            return false;
+        const raw = hex[1].length === 3 ? hex[1].split("").map(c => c + c).join("") : hex[1];
+        const n = parseInt(raw, 16);
+        return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) > 145;
     }
     crAvailableHAThemes() {
         const themes = this.hass?.themes?.themes;
@@ -1668,6 +1680,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.crThemeStyle = v.style;
         this.crThemeSource = v.source;
         this.crHATheme = v.haTheme;
+        this.crHAMode = v.haMode || "auto";
     } this.settingsSection = "overview"; }
     saveCRTheme() {
         try {
@@ -1690,6 +1703,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       <h3>Home Assistant / HACS</h3><p class="settings-note">Folgt den Farbvariablen des aktiven Home Assistant Themes. Installierte HACS-Themes erscheinen nach dem Laden in Home Assistant.</p>
       <label class="welcome-setting-row"><span>Theme-Quelle</span><select .value=${this.crThemeSource} @change=${(e) => { this.crThemeSource = e.target.value; this.requestUpdate(); }}><option value="controlroom">ControlRoom Themes</option><option value="ha">Home Assistant / HACS</option></select></label>
       ${this.crThemeSource === "ha" ? b `<label class="welcome-setting-row"><span>HA Theme (optional)</span><select .value=${this.crHATheme} @change=${(e) => { this.crHATheme = e.target.value; this.requestUpdate(); }}><option value="">Aktuelles Home Assistant Theme verwenden</option>${available.map(name => b `<option value=${name}>${name}</option>`)}</select></label>` : A}
+      ${this.crThemeSource === "ha" ? b `<label class="welcome-setting-row"><span>Darstellung</span><select .value=${this.crHAMode} @change=${(e) => { this.crHAMode = e.target.value; this.requestUpdate(); }}><option value="auto">Automatisch (Home Assistant)</option><option value="light">Hell</option><option value="dark">Dunkel</option></select></label>` : A}
       <div class="cr-theme-actions"><button @click=${() => this.cancelCRTheme()}>Abbrechen</button><button @click=${() => this.saveCRTheme()}>Speichern</button></div>
     </div>`;
     }
@@ -1870,7 +1884,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
     render() {
         return b `
-      <div class=${`dashboard cr-theme-${this.crThemeStyle} ${this.crTheme === "pearl" && this.crThemeSource === "controlroom" ? "cr-theme-light" : ""}`} style=${this.crThemeVars()}>
+      <div class=${`dashboard cr-theme-${this.crThemeStyle} ${(this.crThemeSource === "controlroom" ? this.crTheme === "pearl" : (this.crHAMode === "light" || (this.crHAMode === "auto" && !(this.hass?.themes?.darkMode)))) ? "cr-theme-light" : ""}`} style=${this.crThemeVars()}>
         ${this.renderSidebar()}
 
         <main class="main">
@@ -2425,7 +2439,7 @@ ControlRoomDashboard.styles = i$3 `
     .studio-heading-left {display:flex;align-items:center;gap:12px;min-width:0;flex:1}
     .studio-back,.studio-settings {display:grid;place-items:center;width:38px;height:38px;flex:none;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.05);color:var(--cr-text);cursor:pointer}
     .studio-back:hover,.studio-settings:hover {background:color-mix(in srgb,var(--cr-accent) 20%,transparent)}
-    .lighting-preferences {margin:0 0 17px;padding:18px;border:1px solid color-mix(in srgb,var(--cr-accent) 22%,transparent);border-radius:20px;background:linear-gradient(130deg,color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)),#1d1b28)}
+    .lighting-preferences {margin:0 0 17px;padding:18px;border:1px solid color-mix(in srgb,var(--cr-accent) 22%,transparent);border-radius:20px;background:linear-gradient(130deg,color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)),var(--cr-surface))}
     .preferences-header {display:flex;justify-content:space-between;align-items:center;gap:10px}
     .preferences-header button {border:0;background:transparent;color:var(--cr-muted);cursor:pointer}
     .pref-title {margin:18px 0 9px;color:var(--cr-muted);font-size:12px;font-weight:650}
@@ -2446,8 +2460,8 @@ ControlRoomDashboard.styles = i$3 `
     
     .studio-heading h1 { margin:7px 0 0; }
     .studio-total { font-size:12px; color:var(--cr-muted); }
-    .studio-hero { position:relative; display:flex; min-height:220px; overflow:hidden; padding:26px 28px; border:1px solid color-mix(in srgb,var(--cr-accent) 20%,transparent); border-radius:22px; background:linear-gradient(110deg,color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)),#1b1928); }
-    .studio-hero.lit { background:radial-gradient(ellipse at 88% 85%,rgba(223,158,78,.22),transparent 48%),linear-gradient(110deg,color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)),#1b1928); }
+    .studio-hero { position:relative; display:flex; min-height:220px; overflow:hidden; padding:26px 28px; border:1px solid color-mix(in srgb,var(--cr-accent) 20%,transparent); border-radius:22px; background:linear-gradient(110deg,color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)),var(--cr-surface)); }
+    .studio-hero.lit { background:radial-gradient(ellipse at 88% 85%,rgba(223,158,78,.22),transparent 48%),linear-gradient(110deg,color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)),var(--cr-surface)); }
     .studio-hero-info { position:relative; z-index:1; width:min(70%,540px); }
     .studio-kicker { font-size:11px; font-weight:700; letter-spacing:.15em; color:var(--cr-muted); }
     .studio-mood { margin:13px 0 4px; font-size:clamp(23px,2.6vw,34px); font-weight:750; letter-spacing:-.045em; color:#fff5fa; line-height:1.15; }
@@ -2957,7 +2971,18 @@ ControlRoomDashboard.styles = i$3 `
     .dashboard .settings-cancel,.dashboard .cr-theme-actions button:first-child{background:var(--cr-surface)!important;color:var(--cr-text)!important}
     .dashboard .cr-room-detail-art img.cr-art-3d,.dashboard .cr-room-tile-art img.cr-art-3d{object-fit:contain!important}
     .dashboard .cr-room-detail-art img.cr-art-photo,.dashboard .cr-room-tile-art img.cr-art-photo{object-fit:cover!important}
-  `;
+  
+    /* V8: every dashboard surface follows the selected theme, including HA/HACS */
+    .dashboard .studio-hero,.dashboard .lighting-preferences{background:linear-gradient(115deg,color-mix(in srgb,var(--cr-bg) 78%,var(--cr-accent)),var(--cr-surface))!important;border-color:color-mix(in srgb,var(--cr-accent) 22%,transparent)!important}
+    .dashboard .studio-hero.lit{background:radial-gradient(ellipse at 85% 80%,color-mix(in srgb,var(--cr-accent) 17%,transparent),transparent 55%),linear-gradient(115deg,var(--cr-surface),var(--cr-bg))!important}
+    .dashboard .sidebar{background:color-mix(in srgb,var(--cr-bg) 82%,var(--cr-surface))!important}
+    .dashboard .main{background:var(--cr-bg)!important;color:var(--cr-text)!important}
+    .dashboard .cr-theme-studio,.dashboard .settings-center,.dashboard .settings-option,.dashboard .studio-hero,.dashboard .studio-mood,.dashboard .studio-mood-subtitle{color:var(--cr-text)!important}
+    .dashboard .overview-card,.dashboard .settings-option,.dashboard .cr-room-section,.dashboard .cr-room-tile,.dashboard .studio-room-card{border-color:color-mix(in srgb,var(--cr-text) 11%,transparent)!important}
+    .dashboard.cr-theme-light .sidebar,.dashboard.cr-theme-light .main,.dashboard.cr-theme-light .settings-center{color:var(--cr-text)!important}
+    .dashboard.cr-theme-light .settings-option,.dashboard.cr-theme-light .overview-card,.dashboard.cr-theme-light .cr-room-section{background:color-mix(in srgb,var(--cr-surface) 92%,var(--cr-bg))!important}
+    .dashboard.cr-theme-light .studio-mood,.dashboard.cr-theme-light .studio-mood-subtitle,.dashboard.cr-theme-light .nav-item,.dashboard.cr-theme-light .settings-note{color:var(--cr-text)!important}
+`;
 __decorate([
     n({ attribute: false })
 ], ControlRoomDashboard.prototype, "hass", void 0);
@@ -3039,6 +3064,9 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "crHATheme", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "crHAMode", void 0);
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "labelOptions", void 0);
