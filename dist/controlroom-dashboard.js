@@ -382,6 +382,11 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.roomStyleEditor = false;
         this.roomStyleSnapshot = "";
         this.roomImageDraft = "";
+        this.crTheme = "purple";
+        this.crThemeStyle = "glass";
+        this.crThemeSource = "controlroom";
+        this.crHATheme = "";
+        this.crThemeSnapshot = "";
         this.labelOptions = [];
         this.entityLabels = {};
         this.groupMembers = {};
@@ -691,6 +696,16 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         super.connectedCallback();
         this.restorePreferences();
         try {
+            const v = JSON.parse(localStorage.getItem("controlroom-theme-v1") || "{}");
+            this.crTheme = v.theme || "purple";
+            this.crThemeStyle = v.style || "glass";
+            this.crThemeSource = v.source || "controlroom";
+            this.crHATheme = v.haTheme || "";
+        }
+        catch (error) {
+            console.warn(error);
+        }
+        try {
             this.roomImages = JSON.parse(localStorage.getItem("controlroom-room-images-v1") || "{}");
         }
         catch {
@@ -706,6 +721,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
                 this.roomStyleByArea = v.byArea;
             if (v.photos && typeof v.photos === "object")
                 this.roomPhotoUrls = v.photos;
+            if (v.images && typeof v.images === "object")
+                this.roomImages = { ...this.roomImages, ...v.images };
         }
         catch (error) {
             console.warn(error);
@@ -1024,7 +1041,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const categories = [
             { id: "welcome", title: "Begrüßung & Personen", description: "Anrede, Profilbilder und Standorte", icon: "mdi:account-heart-outline", group: "Startseite" },
             { id: "smartbar", title: "Smart Glass Bar", description: "Wetter, Uhr & Datum und Müllabfuhr", icon: "mdi:weather-partly-cloudy", group: "Startseite" },
-            { id: "appearance", title: "Darstellung", description: "Design und Personalisierung · in Vorbereitung", icon: "mdi:palette-outline", group: "Darstellung" },
+            { id: "rooms", title: "Räume", description: "Bildstil, Raumfotos und automatische Darstellung", icon: "mdi:home-edit-outline", group: "Darstellung" },
+            { id: "themes", title: "Themes", description: "Farben, Designstile und Home Assistant / HACS", icon: "mdi:palette-outline", group: "Darstellung" },
             { id: "devices", title: "Geräte & Bereiche", description: "Bereiche und Entitäten · in Vorbereitung", icon: "mdi:devices", group: "Geräte & Bereiche" },
             { id: "system", title: "System", description: "Informationen und Verwaltung · in Vorbereitung", icon: "mdi:cog-outline", group: "System" }
         ];
@@ -1035,10 +1053,19 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       <label class="settings-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Einstellungen durchsuchen…" .value=${this.settingsSearch} @input=${(e) => { this.settingsSearch = e.target.value; }} aria-label="Einstellungen durchsuchen" /></label>
       ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => b `<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c => c.group === group).map(c => b `<button class="settings-option" @click=${() => { if (c.id === "welcome" || c.id === "smartbar")
                 this.beginSettingsEdit(c.id);
-            else
-                this.settingsSection = c.id; }}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div></section>`) : b `<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
+            else {
+                this.settingsSection = c.id;
+                if (c.id === "rooms")
+                    this.roomStyleSnapshot = JSON.stringify(this.roomVisualData());
+                if (c.id === "themes")
+                    this.crThemeSnapshot = JSON.stringify(this.crThemeData());
+            } }}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div></section>`) : b `<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
       <p class="settings-local-note">Änderungen werden auf diesem Browser / Display gespeichert.</p>
     </div>`;
+        if (section === "themes")
+            return this.renderThemeSettings();
+        if (section === "rooms")
+            return b `<div class="settings-center"><button class="settings-back" @click=${() => { this.cancelRoomVisualSettings(); this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>${this.renderRoomStyleEditor(Object.entries(this.areaNames).sort((a, b) => a[1].localeCompare(b[1])))}</div>`;
         if (section === "appearance" || section === "devices" || section === "system")
             return b `<div class="settings-center"><button class="settings-back" @click=${() => { this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button><section class="welcome-settings"><div class="eyebrow">CONTROLROOM</div><h2>${categories.find(c => c.id === section)?.title}</h2><p>Dieser Bereich wird in einer späteren Etappe eingerichtet. Bestehende Einstellungen bleiben unverändert.</p></section></div>`;
         const candidates = this.getWasteCandidates().filter(e => this.wasteSource === "auto" || e.entity_id.startsWith(`${this.wasteSource}.`));
@@ -1584,10 +1611,64 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       </section>
     `;
     }
+    crThemeData() { return { theme: this.crTheme, style: this.crThemeStyle, source: this.crThemeSource, haTheme: this.crHATheme }; }
+    crPalettes() {
+        return [
+            { id: "purple", name: "Royal Purple", accent: "#a477f5", bg: "#111019", surface: "#282037", text: "#f6f3fb" },
+            { id: "blue", name: "Midnight Blue", accent: "#559cff", bg: "#0c1628", surface: "#1c304b", text: "#f5f8ff" },
+            { id: "emerald", name: "Emerald", accent: "#43c6a0", bg: "#0c1b19", surface: "#1c3530", text: "#f2fff9" },
+            { id: "burgundy", name: "Burgundy", accent: "#ce6c90", bg: "#221219", surface: "#3a222d", text: "#fff4f7" },
+            { id: "gold", name: "Champagne Gold", accent: "#d5b77b", bg: "#1d1a17", surface: "#353029", text: "#fff9ed" },
+            { id: "pearl", name: "Pearl White", accent: "#8270ba", bg: "#f5f3f8", surface: "#ffffff", text: "#30283a" },
+            { id: "obsidian", name: "Obsidian", accent: "#b6b9c2", bg: "#101114", surface: "#25272c", text: "#f6f6f8" }
+        ];
+    }
+    crThemeVars() {
+        const p = this.crPalettes().find(p => p.id === this.crTheme) || this.crPalettes()[0];
+        const ha = this.crThemeSource === "ha";
+        return `--cr-accent:${ha ? 'var(--primary-color, #a477f5)' : p.accent};--cr-bg:${ha ? 'var(--primary-background-color, #111019)' : p.bg};--cr-surface:${ha ? 'var(--card-background-color, #282037)' : p.surface};--cr-text:${ha ? 'var(--primary-text-color, #f6f3fb)' : p.text};--cr-radius:${this.crThemeStyle === "minimal" ? '8px' : this.crThemeStyle === "solid" ? '14px' : '22px'};--cr-blur:${this.crThemeStyle === "glass" ? 'blur(18px)' : 'none'};`;
+    }
+    crAvailableHAThemes() {
+        const themes = this.hass?.themes?.themes;
+        return themes ? Object.keys(themes).sort((a, b) => a.localeCompare(b)) : [];
+    }
+    cancelCRTheme() { if (this.crThemeSnapshot) {
+        const v = JSON.parse(this.crThemeSnapshot);
+        this.crTheme = v.theme;
+        this.crThemeStyle = v.style;
+        this.crThemeSource = v.source;
+        this.crHATheme = v.haTheme;
+    } this.settingsSection = "overview"; }
+    saveCRTheme() {
+        try {
+            localStorage.setItem("controlroom-theme-v1", JSON.stringify(this.crThemeData()));
+        }
+        catch (error) {
+            console.warn(error);
+        }
+        if (this.crThemeSource === "ha" && this.crHATheme) {
+            void this.hass?.callService?.("frontend", "set_theme", { name: this.crHATheme }).catch(e => console.warn("ControlRoom: HA theme selection", e));
+        }
+        this.crThemeSnapshot = JSON.stringify(this.crThemeData());
+        this.settingsSection = "overview";
+    }
+    renderThemeSettings() {
+        const available = this.crAvailableHAThemes();
+        return b `<div class="settings-center cr-theme-studio">
+      <button class="settings-back" @click=${() => this.cancelCRTheme()}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>
+      <div class="cr-room-visual-head"><div class="cr-room-kicker">CONTROLROOM · PERSONALISIERUNG</div><h2>Theme Studio</h2><p>Farben, Oberflächen und Home Assistant Themes für dein Dashboard.</p></div>
+      <h3>ControlRoom Farbwelten</h3><div class="cr-theme-grid">${this.crPalettes().map(p => b `<button class="cr-theme-choice ${this.crTheme === p.id && this.crThemeSource === "controlroom" ? 'chosen' : ''}" @click=${() => { this.crTheme = p.id; this.crThemeSource = "controlroom"; }}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface}`}></i><i style=${`background:${p.surface}`}></i></span><strong>${p.name}</strong>${this.crTheme === p.id && this.crThemeSource === "controlroom" ? this.renderIcon("mdi:check-circle") : A}</button>`)}</div>
+      <h3>Visual Style</h3><div class="cr-theme-style-list">${[['glass', 'Glass Premium', 'Transparenz und weiche Glaseffekte'], ['solid', 'Modern Solid', 'Klare, elegante Oberflächen'], ['minimal', 'Minimal', 'Reduziert und kompakt']].map(([id, title, desc]) => b `<button class=${this.crThemeStyle === id ? 'chosen' : ''} @click=${() => this.crThemeStyle = id}><strong>${title}</strong><small>${desc}</small>${this.crThemeStyle === id ? this.renderIcon("mdi:check-circle") : A}</button>`)}</div>
+      <h3>Home Assistant / HACS</h3><p class="settings-note">Folgt den Farbvariablen des aktiven Home Assistant Themes. Installierte HACS-Themes erscheinen nach dem Laden in Home Assistant.</p>
+      <label class="welcome-setting-row"><span>Theme-Quelle</span><select .value=${this.crThemeSource} @change=${(e) => this.crThemeSource = e.target.value}><option value="controlroom">ControlRoom Themes</option><option value="ha">Home Assistant / HACS</option></select></label>
+      ${this.crThemeSource === "ha" ? b `<label class="welcome-setting-row"><span>HA Theme (optional)</span><select .value=${this.crHATheme} @change=${(e) => this.crHATheme = e.target.value}><option value="">Aktuelles Home Assistant Theme verwenden</option>${available.map(name => b `<option value=${name}>${name}</option>`)}</select></label>` : A}
+      <div class="cr-theme-actions"><button @click=${() => this.cancelCRTheme()}>Abbrechen</button><button @click=${() => this.saveCRTheme()}>Speichern</button></div>
+    </div>`;
+    }
     roomKind(name) {
         const n = name.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         const rules = [
-            ["controlraum", /controlraum|control room|technikraum|technical room|sala tecnica|sala de controle|serverraum|server room|hauszentrale|smart home hub/], ["pooltechnik", /pooltechnik|piscina tecnica|pumpenraum|pool equipment|pool plant/], ["heizungsraum", /heizungsraum|heizraum|boiler room|heating room|sala de aquecimento/], ["solartechnik", /solartechnik|solar room|pv technik|photovoltaik|inverterraum|sala solar/], ["wintergarten", /wintergarten|conservatory|jardim de inverno/], ["terrasse", /terrasse|terrace|terraco|patio/], ["pool", /pool|piscina|schwimmbad|swimming/], ["garten", /garten|garden|jardim|quintal/], ["wohnzimmer", /wohn|living|lounge|sala/], ["schlafzimmer", /schlaf|bedroom|quarto/],
+            ["gastezimmer", /gastezimmer|gästezimmer|guest room|quarto de hospedes/], ["kinderzimmer", /kinderzimmer|kids room|nursery|quarto infantil/], ["fitnessraum", /fitnessraum|fitness room|gym|academia/], ["controlraum", /controlraum|control room|technikraum|technical room|sala tecnica|sala de controle|serverraum|server room|hauszentrale|smart home hub/], ["pooltechnik", /pooltechnik|piscina tecnica|pumpenraum|pool equipment|pool plant/], ["heizungsraum", /heizungsraum|heizraum|boiler room|heating room|sala de aquecimento/], ["solartechnik", /solartechnik|solar room|pv technik|photovoltaik|inverterraum|sala solar/], ["wintergarten", /wintergarten|conservatory|jardim de inverno/], ["terrasse", /terrasse|terrace|terraco|patio/], ["pool", /pool|piscina|schwimmbad|swimming/], ["garten", /garten|garden|jardim|quintal/], ["wohnzimmer", /wohn|living|lounge|sala/], ["schlafzimmer", /schlaf|bedroom|quarto/],
             ["kuche", /kuche|kitchen|cozinha/], ["badezimmer", /bad|bath|banho|wc|toilet/],
             ["esszimmer", /esszimmer|dining|jantar/], ["balkon", /balkon|balcon/],
             ["flur", /flur|hall|eingang|corredor|foyer/], ["buro", /buro|office|escritorio|arbeitszimmer/],
@@ -1597,7 +1678,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         return rules.find(([, pattern]) => pattern.test(n))?.[0] || "generic";
     }
     roomIcon(name) {
-        const icons = { wohnzimmer: "mdi:sofa-outline", schlafzimmer: "mdi:bed-king-outline", kuche: "mdi:chef-hat", badezimmer: "mdi:bathtub-outline", esszimmer: "mdi:table-furniture", balkon: "mdi:flower-outline", flur: "mdi:door-open", buro: "mdi:desk", garage: "mdi:garage-variant", keller: "mdi:archive-outline", waschkuche: "mdi:washing-machine", hobbyraum: "mdi:controller-classic-outline", controlraum: "mdi:server-network", pool: "mdi:pool", garten: "mdi:flower-outline", pooltechnik: "mdi:pump", heizungsraum: "mdi:radiator", solartechnik: "mdi:solar-power", terrasse: "mdi:flower-outline", wintergarten: "mdi:greenhouse", generic: "mdi:home-outline" };
+        const icons = { wohnzimmer: "mdi:sofa-outline", schlafzimmer: "mdi:bed-king-outline", kuche: "mdi:chef-hat", badezimmer: "mdi:bathtub-outline", esszimmer: "mdi:table-furniture", balkon: "mdi:flower-outline", flur: "mdi:door-open", buro: "mdi:desk", garage: "mdi:garage-variant", keller: "mdi:archive-outline", waschkuche: "mdi:washing-machine", hobbyraum: "mdi:controller-classic-outline", controlraum: "mdi:server-network", pool: "mdi:pool", garten: "mdi:flower-outline", pooltechnik: "mdi:pump", heizungsraum: "mdi:radiator", solartechnik: "mdi:solar-power", terrasse: "mdi:flower-outline", wintergarten: "mdi:greenhouse", gastezimmer: "mdi:bed-outline", kinderzimmer: "mdi:teddy-bear", fitnessraum: "mdi:dumbbell", generic: "mdi:home-outline" };
         return icons[this.roomKind(name)];
     }
     roomArt(areaId, name) {
@@ -1606,20 +1687,36 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const automatic = this.roomAutoSwitch && !this.roomStyleByArea[areaId] && mode !== "custom";
         const selected = automatic && Math.floor(this.currentTime.getTime() / 86400000) % 2 === 1 ? (mode === "3d" ? "photos" : "3d") : mode;
         const kind = this.roomKind(name);
-        const image = selected === "custom" ? own : selected === "photos" ? this.roomPhotoUrls[kind] || own : `/local/controlroom/rooms/${kind}.webp`;
-        return image ? b `<img src=${image} alt=${name} loading="lazy" @error=${(e) => { e.target.style.display = "none"; }}/>${this.renderIcon(this.roomIcon(name))}` : this.renderIcon(this.roomIcon(name));
+        const fallback = `/local/controlroom-dashboard/controlroom-rooms-complete-assets/rooms/${kind}.webp`;
+        const photoKinds = { pooltechnik: "heizungsraum", solartechnik: "controlraum", wintergarten: "terrasse", generic: "wohnzimmer", esszimmer: "esszimmer" };
+        const photoKind = photoKinds[kind] || kind;
+        const premiumPhoto = `/local/controlroom-dashboard/controlroom-premium-fotos-20-ambientes/controlroom-premium-fotos/${photoKind}.webp`;
+        const image = selected === "custom" ? (own || fallback) : selected === "photos" ? (this.roomPhotoUrls[kind] || premiumPhoto) : fallback;
+        return image ? b `<img src=${image} alt=${name} loading="lazy" @error=${(e) => { const el = e.target; if (!el.src.endsWith(`/${kind}.webp`) || !el.src.includes("complete-assets")) {
+            el.src = fallback;
+        }
+        else {
+            el.style.display = "none";
+        } }}/>${this.renderIcon(this.roomIcon(name))}` : this.renderIcon(this.roomIcon(name));
     }
     saveRoomVisualSettings() {
         try {
-            localStorage.setItem("controlroom-room-style-v1", JSON.stringify({ style: this.roomStyle, auto: this.roomAutoSwitch, byArea: this.roomStyleByArea, photos: this.roomPhotoUrls }));
+            localStorage.setItem("controlroom-room-style-v1", JSON.stringify({ style: this.roomStyle, auto: this.roomAutoSwitch, byArea: this.roomStyleByArea, photos: this.roomPhotoUrls, images: this.roomImages }));
         }
         catch (error) {
             console.warn("ControlRoom: room visual settings not saved", error);
         }
+        try {
+            localStorage.setItem("controlroom-room-images-v1", JSON.stringify(this.roomImages));
+        }
+        catch (error) {
+            console.warn(error);
+        }
         this.roomStyleSnapshot = JSON.stringify(this.roomVisualData());
         this.roomStyleEditor = false;
+        this.settingsSection = "overview";
     }
-    roomVisualData() { return { style: this.roomStyle, auto: this.roomAutoSwitch, byArea: this.roomStyleByArea, photos: this.roomPhotoUrls }; }
+    roomVisualData() { return { style: this.roomStyle, auto: this.roomAutoSwitch, byArea: this.roomStyleByArea, photos: this.roomPhotoUrls, images: this.roomImages }; }
     cancelRoomVisualSettings() {
         if (this.roomStyleSnapshot) {
             const v = JSON.parse(this.roomStyleSnapshot);
@@ -1627,6 +1724,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             this.roomAutoSwitch = v.auto;
             this.roomStyleByArea = v.byArea;
             this.roomPhotoUrls = v.photos;
+            this.roomImages = v.images || {};
         }
         this.roomStyleEditor = false;
     }
@@ -1634,12 +1732,24 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         return b `<div class="cr-room-visual-editor"><div class="cr-room-visual-head"><div class="cr-room-kicker">CONTROLROOM · PERSONALISIERUNG</div><h2>Räume – Bildstil</h2><p>Wähle Premium 3D, Premium Fotos oder eigene Bilder für jeden Raum.</p></div>
       <label class="welcome-setting-text">Standard-Bildstil<select .value=${this.roomStyle} @change=${(e) => this.roomStyle = e.target.value}><option value="3d">Premium 3D</option><option value="photos">Premium Fotos</option><option value="custom">Eigene Fotos</option></select></label>
       <label class="welcome-setting-row"><span>Automatischer Bildwechsel (täglich, 3D / Fotos)</span><input type="checkbox" .checked=${this.roomAutoSwitch} @change=${(e) => this.roomAutoSwitch = e.target.checked}/></label>
-      <p class="settings-note">Premium Fotos benötigen eine Foto-URL pro Raum. Ohne Foto wird ein Symbol angezeigt. Eigene Bilder werden niemals automatisch gewechselt.</p>
-      ${areas.map(([id, name]) => b `<div class="cr-room-visual-row"><strong>${this.renderIcon(this.roomIcon(name))} ${name}</strong><select .value=${this.roomStyleByArea[id] || ""} @change=${(e) => { const v = e.target.value; this.roomStyleByArea = { ...this.roomStyleByArea, [id]: v }; }}><option value="">Standard</option><option value="3d">Premium 3D</option><option value="photos">Premium Fotos</option><option value="custom">Eigene Fotos</option></select><input type="text" placeholder="Bild-URL: /local/... oder https://..." .value=${this.roomPhotoUrls[this.roomKind(name)] || ""} @change=${(e) => { this.roomPhotoUrls = { ...this.roomPhotoUrls, [this.roomKind(name)]: e.target.value }; }}/></div>`)}
+      <p class="settings-note">Premium Fotos enthält 20 fertige Motive. Optional kannst du eine Foto-URL je Raum hinterlegen. Eigene Bilder werden niemals automatisch gewechselt.</p>
+      ${areas.map(([id, name]) => b `<div class="cr-room-visual-row"><strong>${this.renderIcon(this.roomIcon(name))} ${name}</strong><select .value=${this.roomStyleByArea[id] || ""} @change=${(e) => { const v = e.target.value; this.roomStyleByArea = { ...this.roomStyleByArea, [id]: v }; }}><option value="">Standard</option><option value="3d">Premium 3D</option><option value="photos">Premium Fotos</option><option value="custom">Eigene Fotos</option></select><input type="text" placeholder="Optional: anderes Premium-Foto (/local/... oder https://...)" .value=${this.roomPhotoUrls[this.roomKind(name)] || ""} @change=${(e) => { this.roomPhotoUrls = { ...this.roomPhotoUrls, [this.roomKind(name)]: e.target.value }; }}/><input type="text" placeholder="Eigenes Bild für diesen Raum: /local/..." .value=${this.roomImages[id] || ""} @change=${(e) => { this.roomImages = { ...this.roomImages, [id]: e.target.value }; }}/></div>`)}
       <div class="cr-room-visual-actions"><button @click=${() => this.cancelRoomVisualSettings()}>Abbrechen</button><button @click=${() => this.saveRoomVisualSettings()}>Speichern</button></div></div>`;
     }
     roomEntities(areaId) {
-        return Object.values(this.hass?.states || {}).filter(e => this.allEntityAreas[e.entity_id] === areaId);
+        return Object.values(this.hass?.states || {}).filter(e => {
+            if (this.allEntityAreas[e.entity_id] !== areaId)
+                return false;
+            if (["unavailable", "unknown"].includes(e.state))
+                return false;
+            const domain = e.entity_id.split(".")[0];
+            const name = String(e.attributes.friendly_name || e.entity_id).toLowerCase();
+            if (/config|firmware|update|diagnos|debug|overtemp|do not disturb|signal|rssi|linkquality|reboot|restart|identify|calibrat|battery level|last seen|uptime|version|connection|pairing|child lock|led indicator|power on behavior|auto.update/.test(name))
+                return false;
+            if (domain === "switch")
+                return /steckdose|socket|outlet|plug|power strip|strom|sofa|tischlampe|dekolicht|schalter/.test(name) && !/update|config|lock|indicator/.test(name);
+            return ["light", "cover", "scene", "climate", "media_player", "vacuum", "fan", "humidifier", "lock", "alarm_control_panel", "switch"].includes(domain);
+        });
     }
     async roomLightsToggle(lights, on) {
         if (!this.hass?.callService || !lights.length)
@@ -1681,25 +1791,24 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             const on = lights.filter(e => e.state === "on").length;
             return b `<section class="cr-rooms-page">
         <button class="cr-room-back" @click=${() => { this.roomDetail = ""; this.roomImageEditor = false; }}>${this.renderIcon("mdi:arrow-left")} Alle Räume</button>
-        <div class="cr-room-detail-head"><div><span class="cr-room-kicker">CONTROLROOM · RÄUME</span><h1>${name}</h1><p>${entities.length} Geräte · ${on} von ${lights.length} Lichtern an</p></div>
-        <button class="cr-room-image-edit" @click=${() => { this.roomImageDraft = this.roomImages[areaId] || ""; this.roomImageEditor = !this.roomImageEditor; }}>${this.renderIcon("mdi:image-edit-outline")} Bild ändern</button></div>
-        ${this.roomImageEditor ? b `<div class="cr-room-image-form"><label>Bild-URL (https:// oder /local/...)</label><input .value=${this.roomImageDraft} @input=${(ev) => this.roomImageDraft = ev.target.value} placeholder="/local/controlroom/wohnzimmer.jpg"/><div><button @click=${() => this.roomImageEditor = false}>Abbrechen</button><button @click=${() => this.saveRoomImage(areaId)}>Speichern</button></div></div>` : A}
-        <div class="cr-room-detail-hero"><div class="cr-room-detail-art">${this.roomArt(areaId, name)}</div><div><span>RAUMSTATUS</span><h2>${on ? "Gemütlich beleuchtet" : "Alles ruhig"}</h2><p>${lights.length} Lampen · ${entities.length} Geräte</p><div class="cr-room-actions"><button ?disabled=${!lights.length} @click=${() => this.roomLightsToggle(lights, true)}>Alle an</button><button ?disabled=${!on} @click=${() => this.roomLightsToggle(lights, false)}>Alle aus</button></div></div></div>
+        <div class="cr-room-detail-head"><div><span class="cr-room-kicker">CONTROLROOM · RÄUME</span><h1>${name}</h1><p>${entities.length} Steuerungen · ${on} von ${lights.length} Lichtern an</p></div>
+</div>
+
+        <div class="cr-room-detail-hero"><div class="cr-room-detail-art">${this.roomArt(areaId, name)}</div><div><span>RAUMSTATUS</span><h2>${on ? "Gemütlich beleuchtet" : "Alles ruhig"}</h2><p>${lights.length} Lampen · ${entities.length} Steuerungen</p><div class="cr-room-actions"><button ?disabled=${!lights.length} @click=${() => this.roomLightsToggle(lights, true)}>Alle an</button><button ?disabled=${!on} @click=${() => this.roomLightsToggle(lights, false)}>Alle aus</button></div></div></div>
         <div class="cr-room-sections">${types.map(t => {
                 const members = entities.filter(e => t.domain === "other" ? !types.some(x => x.domain !== "other" && e.entity_id.startsWith(x.domain + ".")) : e.entity_id.startsWith(t.domain + "."));
-                return b `<article class="cr-room-section"><header>${this.renderIcon(t.icon)} <strong>${t.label}</strong><span>${members.length}</span></header>
-            ${members.length ? members.map(e => b `<div class="cr-room-device"><div><strong>${String(e.attributes.friendly_name || e.entity_id)}</strong><small>${e.state}</small></div>${["light", "switch"].some(d => e.entity_id.startsWith(d + ".")) ? b `<button ?disabled=${!["on", "off"].includes(e.state)} @click=${() => this.hass?.callService?.(e.entity_id.split(".")[0], "toggle", { entity_id: e.entity_id })}>${this.renderIcon(e.state === "on" ? "mdi:toggle-switch" : "mdi:toggle-switch-off-outline")}</button>` : A}</div>`) : b `<p class="cr-room-empty">Keine Geräte zugeordnet</p>`}</article>`;
+                return members.length ? b `<article class="cr-room-section"><header>${this.renderIcon(t.icon)} <strong>${t.label}</strong><span>${members.length}</span></header>
+            ${members.length ? members.map(e => b `<div class="cr-room-device"><div><strong>${String(e.attributes.friendly_name || e.entity_id)}</strong><small>${e.state}</small></div>${["light", "switch"].some(d => e.entity_id.startsWith(d + ".")) ? b `<button ?disabled=${!["on", "off"].includes(e.state)} @click=${() => this.hass?.callService?.(e.entity_id.split(".")[0], "toggle", { entity_id: e.entity_id })}>${this.renderIcon(e.state === "on" ? "mdi:toggle-switch" : "mdi:toggle-switch-off-outline")}</button>` : A}</div>`) : b `<p class="cr-room-empty">Keine Geräte zugeordnet</p>`}</article>` : A;
             })}</div>
       </section>`;
         }
-        return b `<section class="cr-rooms-page"><div class="cr-rooms-heading"><span class="cr-room-kicker">CONTROLROOM · SMART HOME</span><h1>Räume</h1><p>Dein Zuhause. Jeder Raum, perfekt verbunden.</p><button class="cr-room-image-edit" @click=${() => { this.roomStyleSnapshot = JSON.stringify(this.roomVisualData()); this.roomStyleEditor = !this.roomStyleEditor; }}>${this.renderIcon("mdi:palette-outline")} Bildstil</button></div>
-      ${this.roomStyleEditor ? this.renderRoomStyleEditor(areas) : A}
+        return b `<section class="cr-rooms-page"><div class="cr-rooms-heading"><span class="cr-room-kicker">CONTROLROOM · SMART HOME</span><h1>Räume</h1><p>Dein Zuhause. Jeder Raum, perfekt verbunden.</p></div>
       ${areas.length ? b `<div class="cr-room-grid">${areas.map(([id, name]) => {
             const entities = this.roomEntities(id), lights = entities.filter(e => e.entity_id.startsWith("light.")), on = lights.filter(e => e.state === "on").length;
             const temps = entities.filter(e => e.entity_id.startsWith("sensor.") && (e.attributes.device_class === "temperature" || e.entity_id.includes("temperature"))).find(e => !isNaN(Number(e.state)));
             return b `<button class="cr-room-tile ${on ? "cr-room-lit" : ""}" @click=${() => { this.roomDetail = id; this.roomImageEditor = false; }}>
           <div class="cr-room-tile-art">${this.roomArt(id, name)}<span class="cr-room-tile-arrow">${this.renderIcon("mdi:arrow-top-right")}</span></div>
-          <div class="cr-room-tile-body"><h2>${name}</h2><p>${entities.length} Geräte ${temps ? b `· ${temps.state} °C` : A}</p><div class="cr-room-tile-footer"><span class="cr-room-led ${on ? "active" : ""}"></span>${on} / ${lights.length} Lampen an</div></div>
+          <div class="cr-room-tile-body"><h2>${name}</h2><p>${entities.length} Steuerungen ${temps ? b `· ${temps.state} °C` : A}</p><div class="cr-room-tile-footer"><span class="cr-room-led ${on ? "active" : ""}"></span>${on} / ${lights.length} Lampen an</div></div>
         </button>`;
         })}</div>` : b `<div class="cr-room-empty-state">${this.renderIcon("mdi:home-search-outline")}<h2>Keine Räume gefunden</h2><p>Erstelle Bereiche in Home Assistant unter Einstellungen → Bereiche, Labels & Zonen.</p></div>`}
     </section>`;
@@ -1726,7 +1835,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
     render() {
         return b `
-      <div class="dashboard">
+      <div class=${`dashboard cr-theme-${this.crThemeStyle} ${this.crTheme === "pearl" && this.crThemeSource === "controlroom" ? "cr-theme-light" : ""}`} style=${this.crThemeVars()}>
         ${this.renderSidebar()}
 
         <main class="main">
@@ -1809,6 +1918,7 @@ ControlRoomDashboard.styles = i$3 `
     .cr-room-section header{display:flex;align-items:center;gap:9px;padding-bottom:14px;border-bottom:1px solid #ffffff17}
     .cr-room-section header ha-icon{color:#bba0d3;--mdc-icon-size:20px}
     .cr-room-section header span{margin-left:auto;color:#a9a0b2;font-size:12px}
+    .cr-room-section:has(.cr-room-device){box-shadow:0 10px 30px #00000014}
     .cr-room-device{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:12px 0;border-bottom:1px solid #ffffff0c}
     .cr-room-device strong{display:block;font-size:12px;overflow-wrap:anywhere}
     .cr-room-device small{display:block;color:#b0a4bb;margin-top:4px;font-size:11px}
@@ -1823,6 +1933,32 @@ ControlRoomDashboard.styles = i$3 `
     @media(max-width:640px){.cr-room-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cr-room-tile-art{height:130px}.cr-room-tile-art>ha-icon{--mdc-icon-size:62px}.cr-room-tile-body{padding:12px}.cr-room-tile-body h2{font-size:14px}.cr-room-tile-body p,.cr-room-tile-footer{font-size:10px}.cr-room-detail-hero{grid-template-columns:1fr}.cr-room-detail-art{height:190px}}
     @media(max-width:350px){.cr-room-grid{grid-template-columns:1fr}}
     @media(prefers-reduced-motion:reduce){.cr-room-tile{transition:none}}
+
+
+    /* Theme Studio: isolated to this dashboard, preserving original purple default */
+    .dashboard { color:var(--cr-text,#f6f3fb); background:radial-gradient(ellipse at 65% 0%,color-mix(in srgb,var(--cr-accent,#a477f5) 15%,transparent),transparent 48%),var(--cr-bg,#111019); border-radius:var(--cr-radius,22px); }
+    .dashboard .sidebar { background:linear-gradient(180deg,color-mix(in srgb,var(--cr-accent,#a477f5) 13%,transparent),transparent); }
+    .dashboard .main { background:transparent; }
+    .dashboard .overview-card,.dashboard .cr-room-tile,.dashboard .cr-room-section,.dashboard .settings-option {border-radius:var(--cr-radius,22px);}
+    .dashboard.cr-theme-solid .overview-card,.dashboard.cr-theme-solid .cr-room-section,.dashboard.cr-theme-solid .settings-option {background:var(--cr-surface)!important;backdrop-filter:none!important;}
+    .dashboard.cr-theme-minimal .overview-card,.dashboard.cr-theme-minimal .cr-room-section,.dashboard.cr-theme-minimal .settings-option {background:color-mix(in srgb,var(--cr-surface) 80%,var(--cr-bg))!important;box-shadow:none!important;backdrop-filter:none!important;}
+    .dashboard.cr-theme-glass .overview-card,.dashboard.cr-theme-glass .cr-room-section {backdrop-filter:var(--cr-blur);}
+    .dashboard.cr-theme-light .page-heading,.dashboard.cr-theme-light .cr-rooms-heading h1,.dashboard.cr-theme-light .cr-room-tile-body h2,.dashboard.cr-theme-light .settings-intro h1 {color:var(--cr-text);}
+    .cr-theme-studio h3{font-size:15px;margin:22px 0 12px;color:var(--cr-text)}
+    .cr-theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:12px}
+    .cr-theme-choice{position:relative;display:grid;gap:10px;text-align:left;padding:9px;border-radius:16px;border:1px solid #ffffff25;background:#ffffff09;color:var(--cr-text);cursor:pointer}
+    .cr-theme-choice.chosen,.cr-theme-style-list button.chosen{border-color:var(--cr-accent);box-shadow:0 0 0 1px var(--cr-accent)}
+    .cr-theme-choice>ha-icon{position:absolute;right:12px;bottom:13px;color:var(--cr-accent);--mdc-icon-size:16px}
+    .cr-theme-preview{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:16px;border-radius:12px;min-height:86px}
+    .cr-theme-preview span{grid-column:1/-1;width:45%;height:7px;border-radius:20px}
+    .cr-theme-preview i{height:34px;border-radius:8px}
+    .cr-theme-choice strong{font-size:12px;padding:0 4px 4px}
+    .cr-theme-style-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+    .cr-theme-style-list button{display:grid;gap:6px;position:relative;text-align:left;padding:15px;border:1px solid #ffffff22;border-radius:13px;background:#ffffff09;color:var(--cr-text);cursor:pointer}
+    .cr-theme-style-list small{opacity:.7}.cr-theme-style-list ha-icon{position:absolute;right:10px;top:10px;color:var(--cr-accent);--mdc-icon-size:17px}
+    .cr-theme-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+    .cr-theme-actions button{border:1px solid #ffffff30;border-radius:12px;padding:11px 20px;background:#ffffff10;color:var(--cr-text);cursor:pointer}
+    .cr-theme-actions button:last-child{background:var(--cr-accent);color:#fff;border-color:transparent}
 
     :host {
       display: block;
@@ -2762,6 +2898,18 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "roomImageDraft", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "crTheme", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "crThemeStyle", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "crThemeSource", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "crHATheme", void 0);
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "labelOptions", void 0);
