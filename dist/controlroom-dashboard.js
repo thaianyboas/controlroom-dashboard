@@ -888,9 +888,20 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         ${this.visibilitySettingsOpen ? this.renderLightingPreferences() : A}
         <div class="studio-hero ${on ? "lit" : ""}">
           <div class="studio-hero-info">
-            <div class="studio-kicker">${this.t("lighting")}</div>
-            <div class="studio-number"><strong>${on}</strong> / ${available.length} ${this.t("lightsOn")}</div>
-            <div class="studio-progress"><span style=${`width:${available.length ? on / available.length * 100 : 0}%`}></span></div>
+            <div class="studio-kicker">${this.getLanguage() === "de" ? "LICHTSTIMMUNG" : this.getLanguage() === "pt" ? "ATMOSFERA DE LUZ" : "LIGHT AMBIENCE"}</div>
+            <div class="studio-mood">${on === 0
+            ? (this.getLanguage() === "de" ? "Alles in Ruhe" : this.getLanguage() === "pt" ? "Tudo tranquilo" : "Peaceful ambience")
+            : on === available.length
+                ? (this.getLanguage() === "de" ? "Alles erstrahlt" : this.getLanguage() === "pt" ? "Tudo iluminado" : "Beautifully illuminated")
+                : (this.getLanguage() === "de" ? "Gemütlich beleuchtet" : this.getLanguage() === "pt" ? "Iluminação aconchegante" : "Warm and inviting")}</div>
+            <div class="studio-mood-subtitle">${on === 0
+            ? (this.getLanguage() === "de" ? "Dein Zuhause genießt eine kleine Lichtpause." : this.getLanguage() === "pt" ? "Sua casa descansa em uma atmosfera tranquila." : "Your home is enjoying a peaceful moment.")
+            : (this.getLanguage() === "de" ? "Dein Zuhause leuchtet in deiner Stimmung." : this.getLanguage() === "pt" ? "Sua casa iluminada do seu jeito." : "Your home, illuminated your way.")}</div>
+            <div class="studio-progress" role="progressbar" aria-label=${this.getLanguage() === "de" ? "Anteil eingeschalteter Lichter" : this.getLanguage() === "pt" ? "Proporção de luzes acesas" : "Proportion of lights on"}
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow=${String(available.length ? Math.round(on / available.length * 100) : 0)}
+              title=${`${on} / ${available.length} ${this.t("lightsOn")}`}>
+              <span style=${`width:${available.length ? on / available.length * 100 : 0}%`}></span>
+            </div>
             <div class="studio-actions">
               <button ?disabled=${!this.hass?.callService} @click=${() => this.setAllLights(true, lights)}>${this.renderIcon("mdi:weather-sunny")}${this.t("allOn")}</button>
               <button ?disabled=${!this.hass?.callService} @click=${() => this.setAllLights(false, lights)}>${this.renderIcon("mdi:weather-night")}${this.t("allOff")}</button>
@@ -1588,19 +1599,22 @@ ControlRoomDashboard.styles = i$3 `
     
     .studio-heading h1 { margin:7px 0 0; }
     .studio-total { font-size:12px; color:#b5a8c1; }
-    .studio-hero { position:relative; display:flex; min-height:185px; overflow:hidden; padding:22px; border:1px solid rgba(199,164,225,.2); border-radius:22px; background:linear-gradient(110deg,#30223d,#1b1928); }
+    .studio-hero { position:relative; display:flex; min-height:220px; overflow:hidden; padding:26px 28px; border:1px solid rgba(199,164,225,.2); border-radius:22px; background:linear-gradient(110deg,#30223d,#1b1928); }
     .studio-hero.lit { background:radial-gradient(ellipse at 88% 85%,rgba(223,158,78,.22),transparent 48%),linear-gradient(110deg,#30223d,#1b1928); }
     .studio-hero-info { position:relative; z-index:1; width:min(70%,540px); }
-    .studio-kicker { font-size:11px; color:#c4b1d0; }
+    .studio-kicker { font-size:11px; font-weight:700; letter-spacing:.15em; color:#c4b1d0; }
+    .studio-mood { margin:13px 0 4px; font-size:clamp(23px,2.6vw,34px); font-weight:750; letter-spacing:-.045em; color:#fff5fa; line-height:1.15; }
+    .studio-mood-subtitle { color:#c5b5cc; font-size:12px; line-height:1.5; }
+    .studio-hero.lit .studio-mood { text-shadow:0 0 28px rgba(247,194,120,.15); }
     .studio-number { margin:9px 0 13px; font-size:14px; }
     .studio-number strong { font-size:28px; }
-    .studio-progress { height:5px; background:#51435d; border-radius:999px; overflow:hidden; }
-    .studio-progress span { display:block; height:100%; background:#d0a5ed; transition:width .3s; }
-    .studio-actions { display:flex; gap:8px; margin-top:15px; }
-    .studio-actions button { display:flex; align-items:center; justify-content:center; gap:7px; flex:1; padding:9px; border:1px solid rgba(255,255,255,.17); border-radius:999px; background:rgba(255,255,255,.035); color:#f1eaf6; cursor:pointer; }
+    .studio-progress { height:7px; margin-top:20px; background:rgba(205,177,221,.2); border:1px solid rgba(255,255,255,.07); border-radius:999px; overflow:hidden; cursor:help; }
+    .studio-progress span { display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,#b58bd7,#e4b6f1); box-shadow:0 0 15px rgba(210,163,237,.3); transition:width .55s ease; }
+    .studio-actions { display:flex; gap:10px; margin-top:19px; }
+    .studio-actions button { display:flex; align-items:center; justify-content:center; gap:9px; flex:1; padding:12px; border:1px solid rgba(255,255,255,.17); border-radius:999px; background:rgba(255,255,255,.035); color:#f1eaf6; cursor:pointer; }
     .studio-actions button:disabled { opacity:.4; }
     .studio-actions ha-icon { --mdc-icon-size:16px; }
-    .studio-pendant { position:absolute; right:30px; top:-24px; width:170px; }
+    .studio-pendant { position:absolute; right:30px; top:-21px; width:195px; pointer-events:none; }
     .ambient-rooms { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:10px; margin-top:14px; }
     .ambient-room { position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:7px; min-height:105px; padding:14px; overflow:hidden; border-radius:16px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.035); color:#c9bfd3; text-align:left; cursor:pointer; }
     .ambient-room.illuminated { border-color:rgba(231,178,109,.35); }
@@ -1770,26 +1784,26 @@ ControlRoomDashboard.styles = i$3 `
     }
 
     /* Premium Compact V3: inline light controls, no duplicated detail panel */
-    .studio-grid { gap:9px; align-items:start; }
-    .studio-light { min-height:0; padding:11px 12px; border-radius:15px; transition:border-color 180ms,background 180ms; }
+    .studio-grid { gap:12px; align-items:start; }
+    .studio-light { min-height:66px; padding:15px 16px; border-radius:17px; transition:border-color 180ms,background 180ms; }
     .studio-light.active { border-color:rgba(205,163,235,.28); background:rgba(159,112,192,.09); }
-    .studio-light-top { display:flex;align-items:center;gap:9px;min-height:30px; }
-    .studio-light-icon { width:29px;height:29px;flex:none; }
-    .studio-light-name { margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px; }
+    .studio-light-top { display:flex;align-items:center;gap:12px;min-height:36px; }
+    .studio-light-icon { width:36px;height:36px;flex:none; }
+    .studio-light-name { margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px; }
     .studio-light .studio-toggle { position:static;flex:none;display:grid;place-items:center;padding:3px; }
-    .studio-light-state-inline,.studio-light-room { display:block;margin:4px 0 0 38px;color:#a99eb6;font-size:10px; }
-    .studio-inline-brightness { display:flex;align-items:center;gap:9px;margin:9px 0 0 38px;min-width:0; }
+    .studio-light-state-inline,.studio-light-room { display:block;margin:5px 0 0 48px;color:#a99eb6;font-size:11px; }
+    .studio-inline-brightness { display:flex;align-items:center;gap:11px;margin:12px 0 0 48px;min-width:0; }
     .studio-inline-slider { flex:1;min-width:0;width:100%;height:4px;margin:0;accent-color:#c8a0e6;cursor:pointer; }
-    .studio-inline-value { min-width:34px;text-align:right;font-size:10px;color:#c8b6d7;font-variant-numeric:tabular-nums; }
+    .studio-inline-value { min-width:38px;text-align:right;font-size:12px;color:#c8b6d7;font-variant-numeric:tabular-nums; }
     .studio-color-trigger { display:grid;place-items:center;flex:none;width:26px;height:26px;padding:2px;border:1px solid rgba(215,175,239,.2);border-radius:9px;background:rgba(255,255,255,.045);color:#bda0d2;cursor:pointer; }
     .studio-color-trigger ha-icon { --mdc-icon-size:17px; }
     .studio-color-trigger.open { background:rgba(171,122,206,.25);border-color:rgba(215,175,239,.45); }
-    .studio-color-alone { margin:7px 0 0 38px; }
-    .studio-inline-colors { margin:10px 0 0 38px;padding-top:9px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:9px; }
+    .studio-color-alone { margin:9px 0 0 48px; }
+    .studio-inline-colors { margin:12px 0 0 48px;padding-top:9px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:9px; }
     .studio-inline-color-line { display:flex;align-items:center;justify-content:space-between;gap:12px;color:#bfaed0;font-size:11px; }
     .studio-inline-color-line .studio-inline-slider { max-width:65%; }
     .studio-inline-color-line .studio-color-picker { width:35px;height:29px; }
-    @media (max-width:600px) { .studio-grid { grid-template-columns:1fr; } }
+    @media (max-width:600px) { .studio-grid { grid-template-columns:1fr; } .studio-hero { padding:22px 18px; } .studio-hero-info { width:80%; } .studio-mood { font-size:23px; } .studio-mood-subtitle { max-width:220px; } .studio-pendant { right:-38px; opacity:.65; } }
 
     @media (prefers-reduced-motion: reduce) {
       .weather-icon { animation: none; }
