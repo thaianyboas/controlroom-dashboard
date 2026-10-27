@@ -413,6 +413,85 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.wasteLoadedCalendar = "";
         this.wasteLastFetch = 0;
         this.wasteFetching = false;
+        // Changes in the settings editor are drafts until explicitly saved.
+        this.settingsDirty = false;
+        this.settingsSavedNotice = false;
+        this.smartDraftSnapshot = "";
+        this.welcomeDraftSnapshot = "";
+    }
+    smartSettingsData() {
+        return {
+            weather: this.smartShowWeather, clock: this.smartShowClock, waste: this.smartShowWaste,
+            weatherSource: this.weatherSource, weatherEntity: this.weatherEntity, weatherTempEntity: this.weatherTempEntity,
+            weatherConditionEntity: this.weatherConditionEntity, clockSource: this.clockSource, clockEntity: this.clockEntity, clockTimezone: this.clockTimezone,
+            source: this.wasteSource, entity: this.wasteEntity, label: this.wasteLabel,
+            icon: this.wasteIcon, dateMode: this.wasteDateMode, switchTime: this.wasteSwitchTime
+        };
+    }
+    welcomeSettingsData() {
+        return { mode: this.welcomeMode, eyebrow: this.welcomeEyebrow, subtitle: this.welcomeSubtitle,
+            showEyebrow: this.welcomeShowEyebrow, showSubtitle: this.welcomeShowSubtitle,
+            showPeople: this.welcomeShowPeople, showGreeting: this.welcomeShowGreeting };
+    }
+    beginSettingsEdit(section) {
+        this.settingsSection = section;
+        this.smartDraftSnapshot = JSON.stringify(this.smartSettingsData());
+        this.welcomeDraftSnapshot = JSON.stringify(this.welcomeSettingsData());
+        this.settingsDirty = false;
+        this.settingsSavedNotice = false;
+    }
+    markSettingsDirty() {
+        this.settingsDirty = this.settingsSection === "smartbar"
+            ? JSON.stringify(this.smartSettingsData()) !== this.smartDraftSnapshot
+            : JSON.stringify(this.welcomeSettingsData()) !== this.welcomeDraftSnapshot;
+        this.settingsSavedNotice = false;
+    }
+    cancelSettingsEdit() {
+        const section = this.settingsSection;
+        if (section === "smartbar" && this.smartDraftSnapshot) {
+            const d = JSON.parse(this.smartDraftSnapshot);
+            this.smartShowWeather = d.weather;
+            this.smartShowClock = d.clock;
+            this.smartShowWaste = d.waste;
+            this.weatherSource = d.weatherSource;
+            this.weatherEntity = d.weatherEntity;
+            this.weatherTempEntity = d.weatherTempEntity;
+            this.weatherConditionEntity = d.weatherConditionEntity;
+            this.clockSource = d.clockSource;
+            this.clockEntity = d.clockEntity;
+            this.clockTimezone = d.clockTimezone;
+            this.wasteSource = d.source;
+            this.wasteEntity = d.entity;
+            this.wasteLabel = d.label;
+            this.wasteIcon = d.icon;
+            this.wasteDateMode = d.dateMode;
+            this.wasteSwitchTime = d.switchTime;
+        }
+        if (section === "welcome" && this.welcomeDraftSnapshot) {
+            const d = JSON.parse(this.welcomeDraftSnapshot);
+            this.welcomeMode = d.mode;
+            this.welcomeEyebrow = d.eyebrow;
+            this.welcomeSubtitle = d.subtitle;
+            this.welcomeShowEyebrow = d.showEyebrow;
+            this.welcomeShowSubtitle = d.showSubtitle;
+            this.welcomeShowPeople = d.showPeople;
+            this.welcomeShowGreeting = d.showGreeting;
+        }
+        this.settingsDirty = false;
+        this.settingsSavedNotice = false;
+        this.settingsSection = "overview";
+    }
+    commitSettingsEdit() {
+        if (this.settingsSection === "smartbar") {
+            this.saveSmartSettings();
+            this.smartDraftSnapshot = JSON.stringify(this.smartSettingsData());
+        }
+        else if (this.settingsSection === "welcome") {
+            this.saveWelcome();
+            this.welcomeDraftSnapshot = JSON.stringify(this.welcomeSettingsData());
+        }
+        this.settingsDirty = false;
+        this.settingsSavedNotice = true;
     }
     restoreSmartSettings() {
         try {
@@ -689,6 +768,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         return key ? this.t(key) : condition.replace(/-/g, " ");
     }
     navigate(page) {
+        if (this.settingsDirty && (this.settingsSection === "smartbar" || this.settingsSection === "welcome"))
+            this.cancelSettingsEdit();
         this.activePage = page;
         this.mobileMenuOpen = false;
     }
@@ -814,7 +895,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         return value || raw;
     }
     async refreshWasteEvents() {
-        if (!this.smartShowWaste || !this.hass?.callService)
+        if (!this.smartShowWaste || !this.hass?.callWS)
             return;
         const entity = this.getWasteEntity();
         const id = entity?.entity_id.startsWith("calendar.") ? entity.entity_id : "";
@@ -833,11 +914,15 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             start.setDate(start.getDate() - 1);
             const end = new Date(this.currentTime);
             end.setDate(end.getDate() + 60);
-            // HA service response is keyed by calendar entity_id.
-            const response = await this.hass.callService("calendar", "get_events", {
-                entity_id: id, start_date_time: start.toISOString(), end_date_time: end.toISOString()
-            }, undefined, true);
-            const container = response?.[id];
+            const response = await this.hass.callWS({
+                type: "call_service", domain: "calendar", service: "get_events",
+                service_data: { entity_id: id, start_date_time: start.toISOString(), end_date_time: end.toISOString() },
+                return_response: true
+            });
+            // HA returns a calendar-keyed response; some versions wrap it in "response".
+            const payload = (response?.response && typeof response.response === "object"
+                ? response.response : response);
+            const container = payload?.[id];
             const events = Array.isArray(container?.events) ? container.events : [];
             if (this.wasteLoadedCalendar === id)
                 this.wasteCalendarEvents = events
@@ -916,19 +1001,22 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             return b `<div class="settings-center">
       <div class="settings-intro"><div class="eyebrow">CONTROLROOM</div><h1>Einstellungen</h1><p>Gestalte dein Zuhause, ganz nach deinen Wünschen.</p></div>
       <label class="settings-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Einstellungen durchsuchen…" .value=${this.settingsSearch} @input=${(e) => { this.settingsSearch = e.target.value; }} aria-label="Einstellungen durchsuchen" /></label>
-      ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => b `<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c => c.group === group).map(c => b `<button class="settings-option" @click=${() => { this.settingsSection = c.id; }}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div></section>`) : b `<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
+      ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => b `<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c => c.group === group).map(c => b `<button class="settings-option" @click=${() => { if (c.id === "welcome" || c.id === "smartbar")
+                this.beginSettingsEdit(c.id);
+            else
+                this.settingsSection = c.id; }}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div></section>`) : b `<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
       <p class="settings-local-note">Änderungen werden auf diesem Browser / Display gespeichert.</p>
     </div>`;
         if (section === "appearance" || section === "devices" || section === "system")
             return b `<div class="settings-center"><button class="settings-back" @click=${() => { this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button><section class="welcome-settings"><div class="eyebrow">CONTROLROOM</div><h2>${categories.find(c => c.id === section)?.title}</h2><p>Dieser Bereich wird in einer späteren Etappe eingerichtet. Bestehende Einstellungen bleiben unverändert.</p></section></div>`;
         const candidates = this.getWasteCandidates().filter(e => this.wasteSource === "auto" || e.entity_id.startsWith(`${this.wasteSource}.`));
         const wasteInfo = this.getWasteInfo();
-        return b `<div class="settings-stack"><button class="settings-back" @click=${() => { this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>
+        return b `<div class="settings-stack"><button class="settings-back" @click=${() => { this.cancelSettingsEdit(); }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>
       ${section === "welcome" ? b `<section class="welcome-settings">
         <div class="eyebrow">Startseite</div><h2>Begrüßung & Personen</h2>
         <p>Personalisierung dieses Browsers / Displays</p>
         <label class="welcome-setting-row"><span>Begrüßungsmodus</span>
-          <select .value=${this.welcomeMode} @change=${(e) => { this.welcomeMode = e.target.value; this.saveWelcome(); }}>
+          <select .value=${this.welcomeMode} @change=${(e) => { this.welcomeMode = e.target.value; this.markSettingsDirty(); }}>
             <option value="automatic">Automatisch · angemeldete Person</option>
             <option value="shared">Gemeinsam · iSG Display</option>
           </select></label>
@@ -938,11 +1026,11 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             ["welcomeShowSubtitle", "Untertitel anzeigen"],
             ["welcomeShowPeople", "Personen und Standorte anzeigen"]
         ].map(([key, label]) => b `<label class="welcome-setting-row"><span>${label}</span>
-          <input type="checkbox" .checked=${this[key]} @change=${(e) => { this[key] = e.target.checked; this.saveWelcome(); }} /></label>`)}
+          <input type="checkbox" .checked=${this[key]} @change=${(e) => { this[key] = e.target.checked; this.markSettingsDirty(); }} /></label>`)}
         <label class="welcome-setting-text">Bereichstitel
-          <input type="text" .value=${this.welcomeEyebrow || this.t("homeLabel")} @change=${(e) => { this.welcomeEyebrow = e.target.value; this.saveWelcome(); }} /></label>
+          <input type="text" .value=${this.welcomeEyebrow || this.t("homeLabel")} @change=${(e) => { this.welcomeEyebrow = e.target.value; this.markSettingsDirty(); }} /></label>
         <label class="welcome-setting-text">Untertitel
-          <input type="text" .value=${this.welcomeSubtitle || this.t("subtitle")} @change=${(e) => { this.welcomeSubtitle = e.target.value; this.saveWelcome(); }} /></label>
+          <input type="text" .value=${this.welcomeSubtitle || this.t("subtitle")} @change=${(e) => { this.welcomeSubtitle = e.target.value; this.markSettingsDirty(); }} /></label>
       </section>` : A}
       ${section === "smartbar" ? b `<section class="welcome-settings">
         <div class="eyebrow">Startseite</div><h2>Smart Glass Bar</h2>
@@ -951,33 +1039,42 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
           <div class="smart-settings-module">
             <div class="smart-settings-head">
               <button type="button" class="smart-settings-open" @click=${() => { this.smartExpanded = this.smartExpanded === id ? "weather" : id; }}>${this.renderIcon(icon)}<strong>${label}</strong>${this.renderIcon(this.smartExpanded === id ? "mdi:chevron-up" : "mdi:chevron-down")}</button>
-              <label class="smart-settings-toggle"><input type="checkbox" .checked=${this[showKey]} @change=${(e) => { this[showKey] = e.target.checked; this.saveSmartSettings(); }} aria-label=${`${label} anzeigen`}/></label>
+              <label class="smart-settings-toggle"><input type="checkbox" .checked=${this[showKey]} @change=${(e) => { this[showKey] = e.target.checked; this.markSettingsDirty(); }} aria-label=${`${label} anzeigen`}/></label>
             </div>
             ${this.smartExpanded === id ? b `<div class="smart-settings-body">
               ${id === "weather" ? b `
-                <label class="welcome-setting-text">Quelle<select .value=${this.weatherSource} @change=${(e) => { this.weatherSource = e.target.value; this.weatherEntity = ""; this.saveSmartSettings(); }}><option value="auto">Automatisch · Wetterintegration</option><option value="weather">Wetter (weather.*)</option><option value="sensor">Sensoren / HACS (sensor.*)</option></select></label>
-                ${this.weatherSource !== "sensor" ? b `<label class="welcome-setting-text">Wetter-Entität<select .value=${this.weatherEntity} @change=${(e) => { this.weatherEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Automatisch auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("weather.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>` : b `
-                  <label class="welcome-setting-text">Temperatursensor<select .value=${this.weatherTempEntity} @change=${(e) => { this.weatherTempEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Bitte auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>
-                  <label class="welcome-setting-text">Wettersituation (optional)<select .value=${this.weatherConditionEntity} @change=${(e) => { this.weatherConditionEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Ohne Beschreibung</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>`}
+                <label class="welcome-setting-text">Quelle<select .value=${this.weatherSource} @change=${(e) => { this.weatherSource = e.target.value; this.weatherEntity = ""; this.markSettingsDirty(); }}><option value="auto">Automatisch · Wetterintegration</option><option value="weather">Wetter (weather.*)</option><option value="sensor">Sensoren / HACS (sensor.*)</option></select></label>
+                ${this.weatherSource !== "sensor" ? b `<label class="welcome-setting-text">Wetter-Entität<select .value=${this.weatherEntity} @change=${(e) => { this.weatherEntity = e.target.value; this.markSettingsDirty(); }}><option value="">Automatisch auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("weather.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>` : b `
+                  <label class="welcome-setting-text">Temperatursensor<select .value=${this.weatherTempEntity} @change=${(e) => { this.weatherTempEntity = e.target.value; this.markSettingsDirty(); }}><option value="">Bitte auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>
+                  <label class="welcome-setting-text">Wettersituation (optional)<select .value=${this.weatherConditionEntity} @change=${(e) => { this.weatherConditionEntity = e.target.value; this.markSettingsDirty(); }}><option value="">Ohne Beschreibung</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>`}
               ` : A}
               ${id === "clock" ? b `
-                <label class="welcome-setting-text">Quelle<select .value=${this.clockSource} @change=${(e) => { this.clockSource = e.target.value; this.saveSmartSettings(); }}><option value="local">Gerätezeit · ohne Integration</option><option value="sensor">Datum-/Zeit-Sensor (sensor.*)</option></select></label>
-                ${this.clockSource === "sensor" ? b `<label class="welcome-setting-text">Zeit-Entität<select .value=${this.clockEntity} @change=${(e) => { this.clockEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Bitte auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label><p class="settings-note">Der Sensor muss ein gültiges ISO-Datum mit Uhrzeit liefern; sonst wird die Gerätezeit verwendet.</p>` : A}
-                <label class="welcome-setting-text">Zeitzone (optional)<input type="text" placeholder="z. B. Europe/Berlin" .value=${this.clockTimezone} @change=${(e) => { this.clockTimezone = e.target.value; this.saveSmartSettings(); }} /></label>
+                <label class="welcome-setting-text">Quelle<select .value=${this.clockSource} @change=${(e) => { this.clockSource = e.target.value; this.markSettingsDirty(); }}><option value="local">Gerätezeit · ohne Integration</option><option value="sensor">Datum-/Zeit-Sensor (sensor.*)</option></select></label>
+                ${this.clockSource === "sensor" ? b `<label class="welcome-setting-text">Zeit-Entität<select .value=${this.clockEntity} @change=${(e) => { this.clockEntity = e.target.value; this.markSettingsDirty(); }}><option value="">Bitte auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label><p class="settings-note">Der Sensor muss ein gültiges ISO-Datum mit Uhrzeit liefern; sonst wird die Gerätezeit verwendet.</p>` : A}
+                <label class="welcome-setting-text">Zeitzone (optional)<input type="text" placeholder="z. B. Europe/Berlin" .value=${this.clockTimezone} @change=${(e) => { this.clockTimezone = e.target.value; this.markSettingsDirty(); }} /></label>
               ` : A}
               ${id === "waste" ? b `
-                <label class="welcome-setting-text">Quelle<select .value=${this.wasteSource} @change=${(e) => { this.wasteSource = e.target.value; this.wasteEntity = ""; this.saveSmartSettings(); }}><option value="auto">Automatisch erkennen</option><option value="calendar">Kalender (calendar.*)</option><option value="sensor">Sensor / HACS (sensor.*)</option></select></label>
-                <label class="welcome-setting-text">Entität<select .value=${this.wasteEntity} @change=${(e) => { this.wasteEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Automatisch auswählen</option>${candidates.map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>
-                <label class="welcome-setting-text">Eigener Name (optional)<input type="text" placeholder="z. B. Biomüll" .value=${this.wasteLabel} @input=${(e) => { this.wasteLabel = e.target.value; this.saveSmartSettings(); }} /></label>
-                <label class="welcome-setting-text">Symbol (MDI)<input type="text" placeholder="mdi:trash-can-outline" .value=${this.wasteIcon} @change=${(e) => { this.wasteIcon = e.target.value || "mdi:trash-can-outline"; this.saveSmartSettings(); }} /></label>
-                <label class="welcome-setting-text">Automatischer Tageswechsel (Umschaltzeit)<input type="time" .value=${this.wasteSwitchTime} @change=${(e) => { this.wasteSwitchTime = e.target.value || "12:00"; this.saveSmartSettings(); }} /></label>
+                <label class="welcome-setting-text">Quelle<select .value=${this.wasteSource} @change=${(e) => { this.wasteSource = e.target.value; this.wasteEntity = ""; this.markSettingsDirty(); }}><option value="auto">Automatisch erkennen</option><option value="calendar">Kalender (calendar.*)</option><option value="sensor">Sensor / HACS (sensor.*)</option></select></label>
+                <label class="welcome-setting-text">Entität<select .value=${this.wasteEntity} @change=${(e) => { this.wasteEntity = e.target.value; this.markSettingsDirty(); }}><option value="">Automatisch auswählen</option>${candidates.map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>
+                <label class="welcome-setting-text">Eigener Name (optional)<input type="text" placeholder="z. B. Biomüll" .value=${this.wasteLabel} @input=${(e) => { this.wasteLabel = e.target.value; this.markSettingsDirty(); }} /></label>
+                <label class="welcome-setting-text">Symbol (MDI)<input type="text" placeholder="mdi:trash-can-outline" .value=${this.wasteIcon} @change=${(e) => { this.wasteIcon = e.target.value || "mdi:trash-can-outline"; this.markSettingsDirty(); }} /></label>
+                <label class="welcome-setting-text">Automatischer Tageswechsel (Umschaltzeit)<input type="time" .value=${this.wasteSwitchTime} @change=${(e) => { this.wasteSwitchTime = e.target.value || "12:00"; this.markSettingsDirty(); }} /></label>
                 <p class="settings-note">Ab 12:00 Uhr (Standard) wird die heutige Abholung übersprungen. Die nächste verfügbare Abholung erscheint automatisch.</p>
-                <label class="welcome-setting-text">Datumsanzeige<select .value=${this.wasteDateMode} @change=${(e) => { this.wasteDateMode = e.target.value; this.saveSmartSettings(); }}><option value="relative">Heute / Morgen / in X Tagen</option><option value="date">Datum</option><option value="both">Beides</option></select></label>
+                <label class="welcome-setting-text">Datumsanzeige<select .value=${this.wasteDateMode} @change=${(e) => { this.wasteDateMode = e.target.value; this.markSettingsDirty(); }}><option value="relative">Heute / Morgen / in X Tagen</option><option value="date">Datum</option><option value="both">Beides</option></select></label>
                 <p class="settings-note">${wasteInfo ? `Vorschau: ${wasteInfo.title} · ${wasteInfo.when}` : "Noch keine gültigen Abholdaten."}</p>
               ` : A}
             </div>` : A}
           </div>`)}
       </section>` : A}
+      ${(section === "welcome" || section === "smartbar") ? b `
+        <div class="settings-save-bar">
+          <div class="settings-save-copy">
+            <strong>${this.settingsDirty ? "Ungespeicherte Änderungen" : this.settingsSavedNotice ? "Änderungen gespeichert" : "Alle Änderungen gespeichert"}</strong>
+            <small>${this.settingsDirty ? "Erst mit Speichern werden deine Einstellungen dauerhaft übernommen." : "Gespeichert auf diesem Browser / Display."}</small>
+          </div>
+          <button type="button" class="settings-cancel" @click=${() => this.cancelSettingsEdit()}>${this.renderIcon("mdi:close")} Abbrechen</button>
+          <button type="button" class="settings-save" ?disabled=${!this.settingsDirty} @click=${() => this.commitSettingsEdit()}>${this.renderIcon("mdi:content-save-outline")} Speichern</button>
+        </div>` : A}
     </div>`;
     }
     renderSmartBar() {
@@ -2267,6 +2364,18 @@ ControlRoomDashboard.styles = i$3 `
       .welcome-title h1 { font-size:24px; }
     }
 
+
+    .settings-save-bar {position:sticky;bottom:14px;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 16px;border:1px solid rgba(207,164,238,.3);border-radius:17px;background:linear-gradient(120deg,rgba(49,37,66,.97),rgba(31,26,42,.97));box-shadow:0 12px 35px rgba(0,0,0,.3);backdrop-filter:blur(20px)}
+    .settings-save-copy {flex:1;min-width:170px;display:grid;gap:3px}
+    .settings-save-copy strong {font-size:13px;color:#f6eafd}
+    .settings-save-copy small {font-size:11px;color:#c2b0d1;line-height:1.4}
+    .settings-cancel,.settings-save {display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 14px;border-radius:11px;border:1px solid rgba(213,174,239,.23);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+    .settings-cancel {background:rgba(255,255,255,.05);color:#dfd2e9}
+    .settings-save {background:linear-gradient(120deg,#a579ce,#8059ac);color:white;border-color:rgba(233,204,255,.4)}
+    .settings-save:disabled {opacity:.45;cursor:not-allowed}
+    .settings-save-bar ha-icon {--mdc-icon-size:17px}
+    @media(max-width:500px){.settings-save-bar{bottom:8px;padding:12px}.settings-save-copy{flex-basis:100%}.settings-cancel,.settings-save{flex:1}}
+
   `;
 __decorate([
     n({ attribute: false })
@@ -2415,6 +2524,12 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "wasteCalendarEvents", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "settingsDirty", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "settingsSavedNotice", void 0);
 ControlRoomDashboard = __decorate([
     t("controlroom-dashboard")
 ], ControlRoomDashboard);
