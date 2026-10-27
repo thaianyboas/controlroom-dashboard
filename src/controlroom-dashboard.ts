@@ -13,6 +13,7 @@ interface HAEntity {
 interface HomeAssistant {
   language?: string;
   states: Record<string, HAEntity>;
+  callService?: (domain: string, service: string, data?: Record<string, unknown>) => Promise<unknown>;
   user?: { name?: string };
   config?: {
     unit_system?: {
@@ -77,6 +78,13 @@ const translations = {
     locationUnknown: "Location unknown",
     peopleCount: "people",
     lights: "Lights",
+    lightsOn: "on",
+    lightsOff: "off",
+    noLights: "No lights found",
+    lightUnavailable: "Unavailable",
+    toggleLight: "Toggle light",
+    lightActionError: "Could not control the light",
+
     climate: "Climate",
     comingSoon: "This section is being prepared.",
     brandSubtitle: "Home Assistant",
@@ -126,6 +134,13 @@ const translations = {
     locationUnknown: "Standort unbekannt",
     peopleCount: "Personen",
     lights: "Lichter",
+    lightsOn: "an",
+    lightsOff: "aus",
+    noLights: "Keine Lichter gefunden",
+    lightUnavailable: "Nicht verfügbar",
+    toggleLight: "Licht schalten",
+    lightActionError: "Licht konnte nicht geschaltet werden",
+
     climate: "Klima",
     comingSoon: "Dieser Bereich wird vorbereitet.",
     brandSubtitle: "Home Assistant",
@@ -175,6 +190,13 @@ const translations = {
     locationUnknown: "Localização desconhecida",
     peopleCount: "pessoas",
     lights: "Luzes",
+    lightsOn: "acesas",
+    lightsOff: "apagadas",
+    noLights: "Nenhuma luz encontrada",
+    lightUnavailable: "Indisponível",
+    toggleLight: "Alternar luz",
+    lightActionError: "Não foi possível controlar a luz",
+
     climate: "Climatização",
     comingSoon: "Estamos preparando esta seção.",
     brandSubtitle: "Home Assistant",
@@ -465,6 +487,97 @@ export class ControlRoomDashboard extends LitElement {
     `;
   }
 
+  private getLights(): HAEntity[] {
+    const states = this.hass?.states ?? {};
+    const lights = Object.values(states).filter((entity) =>
+      entity.entity_id.startsWith("light.")
+    );
+
+    // Exclude a group when all its members are available as individual lights.
+    // This avoids counting the same lights twice while keeping individual controls.
+    return lights.filter((entity) => {
+      const members = entity.attributes.entity_id;
+      if (!Array.isArray(members) || members.length === 0) return true;
+      const lightMembers = members.filter((id): id is string =>
+        typeof id === "string" && id.startsWith("light.")
+      );
+      return !(
+        lightMembers.length > 0 &&
+        lightMembers.every((id) => Boolean(states[id]))
+      );
+    }).sort((a, b) => this.getLightName(a).localeCompare(
+      this.getLightName(b), this.getLanguage()
+    ));
+  }
+
+  private getLightName(light: HAEntity): string {
+    const name = light.attributes.friendly_name;
+    return typeof name === "string" && name.trim()
+      ? name
+      : light.entity_id.slice("light.".length).replace(/_/g, " ");
+  }
+
+  private async toggleLight(light: HAEntity): Promise<void> {
+    if (!this.hass?.callService ||
+        (light.state !== "on" && light.state !== "off")) return;
+    try {
+      await this.hass.callService(
+        "light", light.state === "on" ? "turn_off" : "turn_on",
+        { entity_id: light.entity_id }
+      );
+    } catch (error) {
+      console.error(this.t("lightActionError"), error);
+    }
+  }
+
+  private renderLightsCard() {
+    const lights = this.getLights();
+    const on = lights.filter((light) => light.state === "on").length;
+    const off = lights.filter((light) => light.state === "off").length;
+
+    return html`
+      <article class="overview-card lights-card">
+        <div class="lights-card-heading">
+          <div class="card-icon">${this.renderIcon("mdi:lightbulb-outline")}</div>
+          <div class="lights-summary">
+            <span class="lights-count">${on}</span>
+            <span>${this.t("lightsOn")}</span>
+            <span class="lights-summary-separator">·</span>
+            <span>${off} ${this.t("lightsOff")}</span>
+          </div>
+        </div>
+        <div class="card-title">${this.t("lights")}</div>
+        ${lights.length ? html`
+          <div class="light-list">
+            ${lights.map((light) => {
+              const active = light.state === "on";
+              const available = active || light.state === "off";
+              const name = this.getLightName(light);
+              return html`
+                <button
+                  type="button"
+                  class="light-row ${active ? "is-on" : ""}"
+                  ?disabled=${!available || !this.hass?.callService}
+                  title=${`${this.t("toggleLight")}: ${name}`}
+                  aria-label=${`${this.t("toggleLight")}: ${name}`}
+                  aria-pressed=${active ? "true" : "false"}
+                  @click=${() => this.toggleLight(light)}
+                >
+                  <span class="light-row-icon">${this.renderIcon(active ? "mdi:lightbulb-on" : "mdi:lightbulb-outline")}</span>
+                  <span class="light-row-name">${name}</span>
+                  <span class="light-row-status">${available
+                    ? this.t(active ? "lightsOn" : "lightsOff")
+                    : this.t("lightUnavailable")}</span>
+                  <span class="light-row-switch ${active ? "on" : ""}" aria-hidden="true"><span></span></span>
+                </button>
+              `;
+            })}
+          </div>
+        ` : html`<div class="card-subtitle">${this.t("noLights")}</div>`}
+      </article>
+    `;
+  }
+
   private renderSidebar() {
     return html`
       <aside class="sidebar ${this.mobileMenuOpen ? "open" : ""}">
@@ -523,7 +636,6 @@ export class ControlRoomDashboard extends LitElement {
     const cards: Array<{ key: TranslationKey; icon: string }> = [
       { key: "energy", icon: "mdi:lightning-bolt" },
       { key: "rooms", icon: "mdi:floor-plan" },
-      { key: "lights", icon: "mdi:lightbulb-outline" },
       { key: "climate", icon: "mdi:thermostat" },
       { key: "security", icon: "mdi:shield-check-outline" }
     ];
@@ -560,6 +672,7 @@ export class ControlRoomDashboard extends LitElement {
             </article>
           `
         )}
+        ${this.renderLightsCard()}
       </section>
     `;
   }
@@ -984,6 +1097,30 @@ export class ControlRoomDashboard extends LitElement {
     .pill-name { font-size: 12px; font-weight: 650; }
     .pill-location { color: #bcaed0; font-size: 11px; font-weight: 600; }
     .pill-location.at-home { color: #67dfb2; }
+
+
+    .lights-card { gap: 13px; order: 3; }
+    .overview-card:nth-child(3) { order: 4; }
+    .overview-card:nth-child(4) { order: 5; }
+    .lights-card-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .lights-summary { display: flex; align-items: baseline; gap: 5px; color: #bdb4cb; font-size: 11px; white-space: nowrap; }
+    .lights-count { font-size: 20px; color: #f4e5ff; font-weight: 750; }
+    .lights-summary-separator { color: #766780; }
+    .light-list { display: flex; flex-direction: column; gap: 7px; max-height: 245px; overflow-y: auto; padding-right: 2px; }
+    .light-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 10px; border: 1px solid rgba(255,255,255,.07); border-radius: 12px; background: rgba(255,255,255,.035); color: #c6bfce; text-align: left; cursor: pointer; transition: background 160ms, border-color 160ms; }
+    .light-row:hover:not(:disabled) { background: rgba(174,129,207,.12); border-color: rgba(190,150,220,.3); }
+    .light-row:focus-visible { outline: 2px solid #d3b3f1; outline-offset: 2px; }
+    .light-row:disabled { opacity: .48; cursor: not-allowed; }
+    .light-row.is-on { background: rgba(161,117,193,.12); border-color: rgba(194,153,222,.18); }
+    .light-row-icon { display: flex; color: #9c8cab; }
+    .light-row.is-on .light-row-icon { color: #e2b8ff; }
+    .light-row-icon ha-icon { --mdc-icon-size: 20px; }
+    .light-row-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .light-row-status { font-size: 10px; color: #aaa1b6; }
+    .light-row-switch { display: flex; align-items: center; flex: 0 0 31px; height: 18px; padding: 2px; border-radius: 999px; background: #494253; }
+    .light-row-switch span { width: 14px; height: 14px; border-radius: 50%; background: #d6d0dd; transition: transform 160ms; }
+    .light-row-switch.on { background: #9872b6; }
+    .light-row-switch.on span { transform: translateX(13px); background: #fff; }
 
     .placeholder-page {
       display: flex;
