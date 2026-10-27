@@ -91,7 +91,7 @@ export class ControlRoomDashboard extends LitElement {
     return "en";
   }
 
-  private translate(key: TranslationKey): string {
+  private t(key: TranslationKey): string {
     return translations[this.getLanguage()][key];
   }
 
@@ -159,19 +159,15 @@ export class ControlRoomDashboard extends LitElement {
           ControlRoom Dashboard
         </div>
 
-        <h1>
-          ${this.translate("welcome")}
-        </h1>
+        <h1>${this.t("welcome")}</h1>
 
-        <p>
-          ${this.translate("description")}
-        </p>
+        <p>${this.t("description")}</p>
 
         <div class="status">
           <span class="dot"></span>
           ${connected
-            ? this.translate("connected")
-            : this.translate("waiting")}
+            ? this.t("connected")
+            : this.t("waiting")}
         </div>
       </section>
     `;
