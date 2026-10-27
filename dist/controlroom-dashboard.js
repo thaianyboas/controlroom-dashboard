@@ -395,15 +395,42 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.smartShowWeather = true;
         this.smartShowClock = true;
         this.smartShowWaste = true;
+        this.weatherSource = "auto";
+        this.weatherEntity = "";
+        this.weatherTempEntity = "";
+        this.weatherConditionEntity = "";
+        this.clockSource = "local";
+        this.clockEntity = "";
+        this.clockTimezone = "";
+        this.smartExpanded = "weather";
         this.wasteSource = "auto";
         this.wasteEntity = "";
         this.wasteLabel = "";
         this.wasteIcon = "mdi:trash-can-outline";
         this.wasteDateMode = "relative";
+        this.wasteSwitchTime = "12:00";
+        this.wasteCalendarEvents = [];
+        this.wasteLoadedCalendar = "";
+        this.wasteLastFetch = 0;
+        this.wasteFetching = false;
     }
     restoreSmartSettings() {
         try {
             const data = JSON.parse(localStorage.getItem("controlroom-smartbar-v1") || "{}");
+            if (["auto", "weather", "sensor"].includes(data.weatherSource))
+                this.weatherSource = data.weatherSource;
+            if (typeof data.weatherEntity === "string")
+                this.weatherEntity = data.weatherEntity;
+            if (typeof data.weatherTempEntity === "string")
+                this.weatherTempEntity = data.weatherTempEntity;
+            if (typeof data.weatherConditionEntity === "string")
+                this.weatherConditionEntity = data.weatherConditionEntity;
+            if (["local", "sensor"].includes(data.clockSource))
+                this.clockSource = data.clockSource;
+            if (typeof data.clockEntity === "string")
+                this.clockEntity = data.clockEntity;
+            if (typeof data.clockTimezone === "string")
+                this.clockTimezone = data.clockTimezone;
             if (typeof data.weather === "boolean")
                 this.smartShowWeather = data.weather;
             if (typeof data.clock === "boolean")
@@ -420,6 +447,8 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
                 this.wasteIcon = data.icon;
             if (["relative", "date", "both"].includes(data.dateMode))
                 this.wasteDateMode = data.dateMode;
+            if (typeof data.switchTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(data.switchTime))
+                this.wasteSwitchTime = data.switchTime;
         }
         catch (error) {
             console.warn("ControlRoom: smart bar preferences unavailable", error);
@@ -429,8 +458,10 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         try {
             localStorage.setItem("controlroom-smartbar-v1", JSON.stringify({
                 weather: this.smartShowWeather, clock: this.smartShowClock, waste: this.smartShowWaste,
+                weatherSource: this.weatherSource, weatherEntity: this.weatherEntity, weatherTempEntity: this.weatherTempEntity,
+                weatherConditionEntity: this.weatherConditionEntity, clockSource: this.clockSource, clockEntity: this.clockEntity, clockTimezone: this.clockTimezone,
                 source: this.wasteSource, entity: this.wasteEntity, label: this.wasteLabel,
-                icon: this.wasteIcon, dateMode: this.wasteDateMode
+                icon: this.wasteIcon, dateMode: this.wasteDateMode, switchTime: this.wasteSwitchTime
             }));
         }
         catch (error) {
@@ -519,6 +550,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         return 12;
     }
     updated() {
+        void this.refreshWasteEvents();
         if (this.hass?.callWS && !this.registryLoaded && !this.registryLoading) {
             void this.loadAreaRegistry();
         }
@@ -572,6 +604,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.currentTime = new Date();
         this.clockInterval = setInterval(() => {
             this.currentTime = new Date();
+            void this.refreshWasteEvents();
         }, 30000);
     }
     disconnectedCallback() {
@@ -614,27 +647,42 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         }).format(this.currentTime);
     }
     getWeather() {
-        const states = this.hass?.states;
-        if (!states)
+        const states = this.hass?.states ?? {};
+        if (this.weatherSource === "sensor")
             return undefined;
-        const configured = this.config.weather_entity;
-        if (configured)
-            return states[configured];
-        const candidates = Object.values(states).filter((entity) => entity.entity_id.startsWith("weather.") &&
-            entity.state !== "unknown" &&
-            entity.state !== "unavailable");
-        return candidates[0];
+        if (this.weatherEntity)
+            return states[this.weatherEntity];
+        if (this.config.weather_entity && states[this.config.weather_entity])
+            return states[this.config.weather_entity];
+        return Object.values(states).find(e => e.entity_id.startsWith("weather.") && !["unknown", "unavailable"].includes(e.state));
     }
     getWeatherTemperature(weather) {
-        const raw = weather.attributes.temperature;
-        if (typeof raw !== "number" || !Number.isFinite(raw)) {
+        const sensor = this.weatherSource === "sensor" ? this.hass?.states[this.weatherTempEntity] : undefined;
+        const raw = sensor ? Number(sensor.state) : weather?.attributes.temperature;
+        if (typeof raw !== "number" || !Number.isFinite(raw))
             return "—";
-        }
-        const unit = weather.attributes.temperature_unit;
-        const displayUnit = typeof unit === "string"
-            ? unit
-            : this.hass?.config?.unit_system?.temperature || "°C";
+        const unit = sensor?.attributes.unit_of_measurement ?? weather?.attributes.temperature_unit;
+        const displayUnit = typeof unit === "string" ? unit : this.hass?.config?.unit_system?.temperature || "°C";
         return `${Math.round(raw)} ${displayUnit}`;
+    }
+    getWeatherCondition() {
+        const sensor = this.weatherSource === "sensor" ? this.hass?.states[this.weatherConditionEntity] : undefined;
+        return sensor?.state || this.getWeather()?.state || "";
+    }
+    getClockParts() {
+        const sensor = this.clockSource === "sensor" ? this.hass?.states[this.clockEntity] : undefined;
+        const parsed = sensor && !["unknown", "unavailable"].includes(sensor.state) ? new Date(sensor.state) : undefined;
+        const date = parsed && !Number.isNaN(parsed.getTime()) ? parsed : this.currentTime;
+        const opts = this.clockTimezone.trim() ? { timeZone: this.clockTimezone.trim() } : {};
+        try {
+            return {
+                time: new Intl.DateTimeFormat(this.getLanguage(), { ...opts, hour: "2-digit", minute: "2-digit" }).format(date),
+                date: new Intl.DateTimeFormat(this.getLanguage(), { ...opts, weekday: "short", day: "numeric", month: "short" }).format(date)
+            };
+        }
+        catch {
+            return { time: this.getTime(), date: this.getDate() };
+        }
     }
     getWeatherDescription(condition) {
         const key = weatherKeys[condition];
@@ -649,31 +697,17 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
     renderWeather() {
         const weather = this.getWeather();
-        if (!weather) {
-            return b `
-        <div class="weather weather-empty">
-          ${this.renderIcon("mdi:weather-cloudy-alert")}
-          <span>${this.t("weatherUnavailable")}</span>
-        </div>
-      `;
-        }
-        const icon = weatherIcons[weather.state] ||
-            "mdi:weather-cloudy";
-        return b `
-      <div class="weather" title=${weather.entity_id}>
-        <div class="weather-icon">
-          ${this.renderIcon(icon)}
-        </div>
-        <div class="weather-details">
-          <div class="weather-temp">
-            ${this.getWeatherTemperature(weather)}
-          </div>
-          <div class="weather-condition">
-            ${this.getWeatherDescription(weather.state)}
-          </div>
-        </div>
-      </div>
-    `;
+        const condition = this.getWeatherCondition();
+        if (!weather && this.weatherSource !== "sensor")
+            return A;
+        if (this.weatherSource === "sensor" && !this.hass?.states[this.weatherTempEntity])
+            return A;
+        const icon = weatherIcons[condition] || "mdi:weather-cloudy";
+        return b `<div class="weather" title=${weather?.entity_id || this.weatherTempEntity}>
+      <div class="weather-icon">${this.renderIcon(icon)}</div>
+      <div class="weather-details"><div class="weather-temp">${this.getWeatherTemperature(weather)}</div>
+      <div class="weather-condition">${condition ? this.getWeatherDescription(condition) : ""}</div></div>
+    </div>`;
     }
     getPeople() {
         return Object.values(this.hass?.states ?? {})
@@ -748,6 +782,77 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             candidates.find(e => e.entity_id.startsWith("sensor.") && !["unknown", "unavailable", ""].includes(e.state)) ||
             candidates[0];
     }
+    wasteDay(raw) {
+        if (typeof raw === "object" && raw !== null && "date" in raw)
+            raw = raw.date;
+        if (typeof raw !== "string")
+            return "";
+        const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : "";
+    }
+    wasteDayOffset(day) {
+        const today = this.currentTime;
+        const parts = day.split("-").map(Number);
+        return Math.round((Date.UTC(parts[0], parts[1] - 1, parts[2]) -
+            Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+    }
+    wasteIsPast(day) {
+        const days = this.wasteDayOffset(day);
+        const [h, m] = this.wasteSwitchTime.split(":").map(Number);
+        return days < 0 || (days === 0 && (this.currentTime.getHours() * 60 + this.currentTime.getMinutes()) >= h * 60 + m);
+    }
+    wasteName(raw) {
+        const value = raw.replace(/^\s*(abfuhr|leerung|entsorgung|abholung)\s*[:–-]?\s*/i, "").trim();
+        if (/restm[uü]ll|schwarze[rns]?\s+tonne|hausm[uü]ll/i.test(value))
+            return "Restmüll";
+        if (/bio(m[uü]ll)?|braune[rns]?\s+tonne/i.test(value))
+            return "Biomüll";
+        if (/papier|pappe|blaue[rns]?\s+tonne/i.test(value))
+            return "Papier";
+        if (/gelbe[rns]?\s+(tonne|sack)|wertstoff|leichtverpackung/i.test(value))
+            return "Gelbe Tonne";
+        return value || raw;
+    }
+    async refreshWasteEvents() {
+        if (!this.smartShowWaste || !this.hass?.callService)
+            return;
+        const entity = this.getWasteEntity();
+        const id = entity?.entity_id.startsWith("calendar.") ? entity.entity_id : "";
+        if (!id) {
+            this.wasteLoadedCalendar = "";
+            this.wasteCalendarEvents = [];
+            return;
+        }
+        if (this.wasteFetching || (id === this.wasteLoadedCalendar && Date.now() - this.wasteLastFetch < 300000))
+            return;
+        this.wasteFetching = true;
+        this.wasteLoadedCalendar = id;
+        this.wasteLastFetch = Date.now();
+        try {
+            const start = new Date(this.currentTime);
+            start.setDate(start.getDate() - 1);
+            const end = new Date(this.currentTime);
+            end.setDate(end.getDate() + 60);
+            // HA service response is keyed by calendar entity_id.
+            const response = await this.hass.callService("calendar", "get_events", {
+                entity_id: id, start_date_time: start.toISOString(), end_date_time: end.toISOString()
+            }, undefined, true);
+            const container = response?.[id];
+            const events = Array.isArray(container?.events) ? container.events : [];
+            if (this.wasteLoadedCalendar === id)
+                this.wasteCalendarEvents = events
+                    .map(event => ({ summary: String(event.summary || ""), date: this.wasteDay(event.start) }))
+                    .filter(event => event.date && event.summary);
+        }
+        catch (error) {
+            console.warn("ControlRoom: calendar.get_events unavailable; using entity fallback", error);
+            if (this.wasteLoadedCalendar === id)
+                this.wasteCalendarEvents = [];
+        }
+        finally {
+            this.wasteFetching = false;
+        }
+    }
     getWasteInfo() {
         const entity = this.getWasteEntity();
         if (!entity || ["unknown", "unavailable"].includes(entity.state))
@@ -755,43 +860,47 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const attrs = entity.attributes;
         const name = String(attrs.friendly_name || entity.entity_id.split(".")[1].replace(/_/g, " "));
         const message = attrs.message || attrs.next_collection_type || attrs.waste_type || attrs.type;
-        const title = this.wasteLabel.trim() || (typeof message === "string" && message.trim() ? message : name);
         const dateRaw = attrs.start_time || attrs.next_date || attrs.next_collection || attrs.date ||
             attrs.collection_date || attrs.next_pickup || attrs.next_collection_date;
-        const state = entity.state;
-        const dateCandidate = typeof dateRaw === "string" ? dateRaw :
-            /^\d{4}-\d{2}-\d{2}/.test(state) ? state : "";
-        let date;
-        if (dateCandidate) {
-            const parsed = new Date(dateCandidate);
-            if (!Number.isNaN(parsed.getTime()))
-                date = parsed;
+        const date = this.wasteDay(dateRaw || entity.state);
+        const events = entity.entity_id.startsWith("calendar.") && this.wasteLoadedCalendar === entity.entity_id
+            ? [...this.wasteCalendarEvents] : [];
+        if (date && typeof message === "string")
+            events.push({ summary: message, date });
+        else if (date)
+            events.push({ summary: name, date });
+        const upcoming = events.filter(e => !this.wasteIsPast(e.date)).sort((a, b) => a.date.localeCompare(b.date));
+        if (upcoming.length) {
+            const firstDay = upcoming[0].date;
+            const sameDay = upcoming.filter(e => e.date === firstDay);
+            const names = [...new Set(sameDay.map(e => this.wasteName(e.summary)))];
+            const title = this.wasteLabel.trim() || names.join(" + ");
+            return { title, when: this.formatWasteWhen(firstDay) };
         }
-        const daysAttr = attrs.days_until_collection ?? attrs.days_until ?? attrs.days_remaining;
-        let days;
-        if (date) {
-            const now = this.currentTime;
-            const a = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-            const b = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
-            days = Math.round((b - a) / 86400000);
+        // Sensors that expose only a countdown cannot reveal the following pickup.
+        // Never keep showing today's collection after the configured cutoff.
+        const daysRaw = attrs.days_until_collection ?? attrs.days_until ?? attrs.days_remaining;
+        const days = typeof daysRaw === "number" ? daysRaw :
+            typeof daysRaw === "string" && /^\d+$/.test(daysRaw) ? Number(daysRaw) :
+                entity.entity_id.startsWith("sensor.") && /^\d+$/.test(entity.state) ? Number(entity.state) : undefined;
+        if (days !== undefined && Number.isFinite(days) && days >= 0) {
+            const future = new Date(this.currentTime);
+            future.setDate(future.getDate() + days);
+            const day = `${future.getFullYear()}-${String(future.getMonth() + 1).padStart(2, "0")}-${String(future.getDate()).padStart(2, "0")}`;
+            if (!this.wasteIsPast(day))
+                return { title: this.wasteLabel.trim() || this.wasteName(String(message || name)), when: this.formatWasteWhen(day) };
         }
-        else if (typeof daysAttr === "number" && Number.isFinite(daysAttr))
-            days = daysAttr;
-        else if (typeof daysAttr === "string" && /^\d+$/.test(daysAttr))
-            days = Number(daysAttr);
-        else if (entity.entity_id.startsWith("sensor.") && /^\d+$/.test(state))
-            days = Number(state);
+        return undefined;
+    }
+    formatWasteWhen(day) {
+        const days = this.wasteDayOffset(day);
         const lang = this.getLanguage();
-        const relative = days === undefined ? "" : days === 0 ? (lang === "de" ? "Heute" : lang === "pt" ? "Hoje" : "Today") :
+        const relative = days === 0 ? (lang === "de" ? "Heute" : lang === "pt" ? "Hoje" : "Today") :
             days === 1 ? (lang === "de" ? "Morgen" : lang === "pt" ? "Amanhã" : "Tomorrow") :
-                (lang === "de" ? `In ${days} Tagen` : lang === "pt" ? `Em ${days} dias` : `In ${days} days`);
-        const absolute = date ? new Intl.DateTimeFormat(lang, { day: "2-digit", month: "short" }).format(date) : "";
-        const when = this.wasteDateMode === "date" ? (absolute || relative) :
-            this.wasteDateMode === "both" ? [relative, absolute].filter(Boolean).join(" · ") : (relative || absolute);
-        const fallback = entity.entity_id.startsWith("sensor.") && !/^\d{4}-\d{2}-\d{2}/.test(state) && !/^\d+$/.test(state) ? state : "";
-        if (!when && !fallback)
-            return undefined; // Hide unconfigured / empty data.
-        return { title, when: when || fallback };
+                lang === "de" ? `In ${days} Tagen` : lang === "pt" ? `Em ${days} dias` : `In ${days} days`;
+        const [y, m, d] = day.split("-").map(Number);
+        const absolute = new Intl.DateTimeFormat(lang, { day: "2-digit", month: "short" }).format(new Date(y, m - 1, d));
+        return this.wasteDateMode === "date" ? absolute : this.wasteDateMode === "both" ? `${relative} · ${absolute}` : relative;
     }
     renderWelcomeSettings() {
         const section = this.settingsSection;
@@ -837,47 +946,48 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       </section>` : A}
       ${section === "smartbar" ? b `<section class="welcome-settings">
         <div class="eyebrow">Startseite</div><h2>Smart Glass Bar</h2>
-        <p>Wetter, Uhr und Müllabfuhr · pro Browser / Display gespeichert</p>
-        ${[
-            ["smartShowWeather", "Wetter anzeigen"],
-            ["smartShowClock", "Uhr & Datum anzeigen"],
-            ["smartShowWaste", "Müllabfuhr anzeigen"]
-        ].map(([key, label]) => b `<label class="welcome-setting-row"><span>${label}</span>
-          <input type="checkbox" .checked=${this[key]} @change=${(e) => { this[key] = e.target.checked; this.saveSmartSettings(); }} /></label>`)}
-        <div class="settings-subheading">Müllabfuhr · Datenquelle</div>
-        <label class="welcome-setting-text">Quelle
-          <select .value=${this.wasteSource} @change=${(e) => { this.wasteSource = e.target.value; this.wasteEntity = ""; this.saveSmartSettings(); }}>
-            <option value="auto">Automatisch erkennen</option>
-            <option value="calendar">Kalender (calendar.*)</option>
-            <option value="sensor">Sensor / HACS (sensor.*)</option>
-          </select></label>
-        <label class="welcome-setting-text">Entität
-          <select .value=${this.wasteEntity} @change=${(e) => { this.wasteEntity = e.target.value; this.saveSmartSettings(); }}>
-            <option value="">Automatisch auswählen</option>
-            ${candidates.map(entity => b `<option value=${entity.entity_id}>${String(entity.attributes.friendly_name || entity.entity_id)} · ${entity.entity_id}</option>`)}
-          </select></label>
-        ${!candidates.length ? b `<p class="settings-note">Keine passende Entität gefunden. Prüfe, ob die Integration einen Kalender oder Sensor bereitstellt.</p>` : A}
-        <label class="welcome-setting-text">Eigener Name (optional)
-          <input type="text" placeholder="z. B. Biomüll" .value=${this.wasteLabel} @input=${(e) => { this.wasteLabel = e.target.value; this.saveSmartSettings(); }} /></label>
-        <label class="welcome-setting-text">Symbol (MDI)
-          <input type="text" placeholder="mdi:trash-can-outline" .value=${this.wasteIcon} @change=${(e) => { this.wasteIcon = e.target.value || "mdi:trash-can-outline"; this.saveSmartSettings(); }} /></label>
-        <label class="welcome-setting-text">Datumsanzeige
-          <select .value=${this.wasteDateMode} @change=${(e) => { this.wasteDateMode = e.target.value; this.saveSmartSettings(); }}>
-            <option value="relative">Relativ · Heute / Morgen / in X Tagen</option>
-            <option value="date">Datum · 28. Okt.</option>
-            <option value="both">Beides · Morgen · 28. Okt.</option>
-          </select></label>
-        <p class="settings-note">${wasteInfo ? `Vorschau: ${wasteInfo.title} · ${wasteInfo.when}` : "Noch keine gültigen Abholdaten. Der Eintrag bleibt in der Smart Bar verborgen."}</p>
+        <p>Module und Datenquellen · auf diesem Display gespeichert</p>
+        ${[["weather", "Wetter", "smartShowWeather", "mdi:weather-partly-cloudy"], ["clock", "Uhr & Datum", "smartShowClock", "mdi:clock-outline"], ["waste", "Müllabfuhr", "smartShowWaste", "mdi:trash-can-outline"]].map(([id, label, showKey, icon]) => b `
+          <div class="smart-settings-module">
+            <div class="smart-settings-head">
+              <button type="button" class="smart-settings-open" @click=${() => { this.smartExpanded = this.smartExpanded === id ? "weather" : id; }}>${this.renderIcon(icon)}<strong>${label}</strong>${this.renderIcon(this.smartExpanded === id ? "mdi:chevron-up" : "mdi:chevron-down")}</button>
+              <label class="smart-settings-toggle"><input type="checkbox" .checked=${this[showKey]} @change=${(e) => { this[showKey] = e.target.checked; this.saveSmartSettings(); }} aria-label=${`${label} anzeigen`}/></label>
+            </div>
+            ${this.smartExpanded === id ? b `<div class="smart-settings-body">
+              ${id === "weather" ? b `
+                <label class="welcome-setting-text">Quelle<select .value=${this.weatherSource} @change=${(e) => { this.weatherSource = e.target.value; this.weatherEntity = ""; this.saveSmartSettings(); }}><option value="auto">Automatisch · Wetterintegration</option><option value="weather">Wetter (weather.*)</option><option value="sensor">Sensoren / HACS (sensor.*)</option></select></label>
+                ${this.weatherSource !== "sensor" ? b `<label class="welcome-setting-text">Wetter-Entität<select .value=${this.weatherEntity} @change=${(e) => { this.weatherEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Automatisch auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("weather.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>` : b `
+                  <label class="welcome-setting-text">Temperatursensor<select .value=${this.weatherTempEntity} @change=${(e) => { this.weatherTempEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Bitte auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>
+                  <label class="welcome-setting-text">Wettersituation (optional)<select .value=${this.weatherConditionEntity} @change=${(e) => { this.weatherConditionEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Ohne Beschreibung</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>`}
+              ` : A}
+              ${id === "clock" ? b `
+                <label class="welcome-setting-text">Quelle<select .value=${this.clockSource} @change=${(e) => { this.clockSource = e.target.value; this.saveSmartSettings(); }}><option value="local">Gerätezeit · ohne Integration</option><option value="sensor">Datum-/Zeit-Sensor (sensor.*)</option></select></label>
+                ${this.clockSource === "sensor" ? b `<label class="welcome-setting-text">Zeit-Entität<select .value=${this.clockEntity} @change=${(e) => { this.clockEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Bitte auswählen</option>${Object.values(this.hass?.states ?? {}).filter(e => e.entity_id.startsWith("sensor.")).map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label><p class="settings-note">Der Sensor muss ein gültiges ISO-Datum mit Uhrzeit liefern; sonst wird die Gerätezeit verwendet.</p>` : A}
+                <label class="welcome-setting-text">Zeitzone (optional)<input type="text" placeholder="z. B. Europe/Berlin" .value=${this.clockTimezone} @change=${(e) => { this.clockTimezone = e.target.value; this.saveSmartSettings(); }} /></label>
+              ` : A}
+              ${id === "waste" ? b `
+                <label class="welcome-setting-text">Quelle<select .value=${this.wasteSource} @change=${(e) => { this.wasteSource = e.target.value; this.wasteEntity = ""; this.saveSmartSettings(); }}><option value="auto">Automatisch erkennen</option><option value="calendar">Kalender (calendar.*)</option><option value="sensor">Sensor / HACS (sensor.*)</option></select></label>
+                <label class="welcome-setting-text">Entität<select .value=${this.wasteEntity} @change=${(e) => { this.wasteEntity = e.target.value; this.saveSmartSettings(); }}><option value="">Automatisch auswählen</option>${candidates.map(e => b `<option value=${e.entity_id}>${String(e.attributes.friendly_name || e.entity_id)} · ${e.entity_id}</option>`)}</select></label>
+                <label class="welcome-setting-text">Eigener Name (optional)<input type="text" placeholder="z. B. Biomüll" .value=${this.wasteLabel} @input=${(e) => { this.wasteLabel = e.target.value; this.saveSmartSettings(); }} /></label>
+                <label class="welcome-setting-text">Symbol (MDI)<input type="text" placeholder="mdi:trash-can-outline" .value=${this.wasteIcon} @change=${(e) => { this.wasteIcon = e.target.value || "mdi:trash-can-outline"; this.saveSmartSettings(); }} /></label>
+                <label class="welcome-setting-text">Automatischer Tageswechsel (Umschaltzeit)<input type="time" .value=${this.wasteSwitchTime} @change=${(e) => { this.wasteSwitchTime = e.target.value || "12:00"; this.saveSmartSettings(); }} /></label>
+                <p class="settings-note">Ab 12:00 Uhr (Standard) wird die heutige Abholung übersprungen. Die nächste verfügbare Abholung erscheint automatisch.</p>
+                <label class="welcome-setting-text">Datumsanzeige<select .value=${this.wasteDateMode} @change=${(e) => { this.wasteDateMode = e.target.value; this.saveSmartSettings(); }}><option value="relative">Heute / Morgen / in X Tagen</option><option value="date">Datum</option><option value="both">Beides</option></select></label>
+                <p class="settings-note">${wasteInfo ? `Vorschau: ${wasteInfo.title} · ${wasteInfo.when}` : "Noch keine gültigen Abholdaten."}</p>
+              ` : A}
+            </div>` : A}
+          </div>`)}
       </section>` : A}
     </div>`;
     }
     renderSmartBar() {
-        const weather = this.smartShowWeather ? this.getWeather() : undefined;
+        const weather = this.smartShowWeather && (this.getWeather() || (this.weatherSource === "sensor" && this.hass?.states[this.weatherTempEntity]));
+        const clockParts = this.getClockParts();
         const waste = this.smartShowWaste ? this.getWasteInfo() : undefined;
         const parts = [
             weather ? b `<div class="smart-part">${this.renderWeather()}</div>` : A,
             this.smartShowClock ? b `<div class="smart-part"><div class="smart-segment">${this.renderIcon("mdi:clock-outline")}
-        <div><strong>${this.getTime()}</strong><small>${this.getDate()}</small></div></div></div>` : A,
+        <div><strong>${clockParts.time}</strong><small>${clockParts.date}</small></div></div></div>` : A,
             waste ? b `<div class="smart-part"><div class="smart-segment smart-waste">${this.renderIcon(this.wasteIcon.startsWith("mdi:") ? this.wasteIcon : "mdi:trash-can-outline")}
         <div><strong title=${waste.title}>${waste.title}</strong><small>${waste.when}</small></div></div></div>` : A
         ].filter(part => part !== A);
@@ -2095,7 +2205,7 @@ ControlRoomDashboard.styles = i$3 `
     .smart-segment {display:flex;align-items:center;gap:9px;min-width:0}
     .smart-segment>ha-icon {--mdc-icon-size:21px;color:#c6a5dd;flex:none}
     .smart-segment>div {min-width:0}
-    .smart-waste strong {display:block;max-width:125px;overflow:hidden;text-overflow:ellipsis}
+    .smart-waste strong {display:block;max-width:210px;overflow:hidden;text-overflow:ellipsis}
     .welcome-title {display:flex;align-items:center;gap:14px}
     .welcome-title h1 {margin:12px 0 10px}
     .pill-avatar.avatar-large {flex:0 0 49px;width:49px;height:49px;border:1px solid rgba(223,190,245,.4)}
@@ -2138,6 +2248,17 @@ ControlRoomDashboard.styles = i$3 `
       .welcome-settings { padding:17px; }
       .welcome-setting-row { flex-wrap:wrap; gap:10px; }
     }
+    /* Readable Smart Bar secondary labels across screen sizes */
+    .smart-bar .weather-temp,.smart-segment strong {font-size:17px;font-weight:700}
+    .smart-bar .weather-condition,.smart-segment small {display:block;font-size:13px;color:#d7c7e3;line-height:1.35}
+    .smart-segment>ha-icon {--mdc-icon-size:24px}
+    @media(max-width:650px){.smart-bar .weather-temp,.smart-segment strong{font-size:16px}.smart-bar .weather-condition,.smart-segment small{display:block;font-size:12px}.smart-bar{row-gap:9px}}
+    .smart-settings-module{border:1px solid rgba(213,174,239,.15);border-radius:15px;background:rgba(255,255,255,.035);overflow:hidden;margin-top:12px}
+    .smart-settings-head{display:flex;align-items:center;gap:12px;padding:12px 14px}
+    .smart-settings-open{display:flex;align-items:center;gap:10px;flex:1;text-align:left;background:none;border:0;color:#f4e9fa;cursor:pointer;font:inherit}
+    .smart-settings-open strong{flex:1}.smart-settings-open ha-icon{--mdc-icon-size:21px;color:#cda9e8}
+    .smart-settings-toggle input{accent-color:#bd8be2;width:18px;height:18px}
+    .smart-settings-body{padding:8px 15px 17px;border-top:1px solid rgba(213,174,239,.12);display:grid;gap:12px}
     @media (max-width: 390px) {
       .main { padding-left:12px; padding-right:12px; }
       .smart-bar { justify-content:flex-start; }
@@ -2251,6 +2372,30 @@ __decorate([
 ], ControlRoomDashboard.prototype, "smartShowWaste", void 0);
 __decorate([
     r()
+], ControlRoomDashboard.prototype, "weatherSource", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "weatherEntity", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "weatherTempEntity", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "weatherConditionEntity", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "clockSource", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "clockEntity", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "clockTimezone", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "smartExpanded", void 0);
+__decorate([
+    r()
 ], ControlRoomDashboard.prototype, "wasteSource", void 0);
 __decorate([
     r()
@@ -2264,6 +2409,12 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "wasteDateMode", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "wasteSwitchTime", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "wasteCalendarEvents", void 0);
 ControlRoomDashboard = __decorate([
     t("controlroom-dashboard")
 ], ControlRoomDashboard);
