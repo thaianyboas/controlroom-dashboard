@@ -3034,7 +3034,8 @@ ControlRoomDashboard.styles = i$3 `
     @media(max-width:650px){.smart-bar .weather-temp,.smart-segment strong{font-size:16px}.smart-bar .weather-condition,.smart-segment small{display:block;font-size:12px}.smart-bar{row-gap:9px}}
     .smart-settings-module{border:1px solid color-mix(in srgb,var(--cr-accent) 15%,transparent);border-radius:15px;background:rgba(255,255,255,.035);overflow:hidden;margin-top:12px}
     .smart-settings-head{display:flex;align-items:center;gap:12px;padding:12px 14px}
-    .smart-settings-open{display:flex;align-items:center;gap:10px;flex:1;text-align:left;background:none;border:0;color:#f4e9fa;cursor:pointer;font:inherit}
+    .smart-settings-open{display:flex;align-items:center;gap:10px;flex:1;text-align:left;background:none;border:0;color:var(--cr-text);cursor:pointer;font:inherit}
+    .dashboard .smart-settings-head .smart-settings-open,.dashboard .smart-settings-head .smart-settings-open strong{color:var(--cr-text)!important}
     .smart-settings-open strong{flex:1}.smart-settings-open ha-icon{--mdc-icon-size:21px;color:var(--cr-text)}
     .smart-settings-toggle input{accent-color:var(--cr-accent);width:18px;height:18px}
     .smart-settings-body{padding:8px 15px 17px;border-top:1px solid color-mix(in srgb,var(--cr-accent) 12%,transparent);display:grid;gap:12px}
