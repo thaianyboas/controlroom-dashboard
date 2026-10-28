@@ -1506,7 +1506,19 @@ export class ControlRoomDashboard extends LitElement {
     {id:"rose-noir",name:"Rose Noir",accent:"#e3a04b",bg:"#190d17",surface:"#301823",text:"#fff1f4"},
     {id:"gold",name:"Champagne Gold",accent:"#b8ab92",bg:"#1b1b1a",surface:"#2c2b29",text:"#fff9ed"},
     {id:"pearl",name:"Pearl White",accent:"#7664a9",bg:"#f5f3f8",surface:"#ffffff",text:"#30283a"},
-    {id:"obsidian",name:"Obsidian",accent:"#b6b9c2",bg:"#101114",surface:"#25272c",text:"#f6f6f8"}
+    {id:"obsidian",name:"Obsidian",accent:"#b6b9c2",bg:"#101114",surface:"#25272c",text:"#f6f6f8"},
+    {id:"sapphire",name:"Sapphire Night",accent:"#70a9ed",bg:"#081425",surface:"#162b43",text:"#f1f7ff"},
+    {id:"forest",name:"Forest Luxe",accent:"#b2c79a",bg:"#101c18",surface:"#24382d",text:"#f5f7ef"},
+    {id:"terracotta",name:"Terracotta Atelier",accent:"#b85e48",bg:"#faf1e8",surface:"#fffaf5",text:"#322820"},
+    {id:"sand",name:"Desert Sand",accent:"#96734b",bg:"#f4e9d7",surface:"#fff9ed",text:"#312b22"},
+    {id:"ocean",name:"Ocean Mist",accent:"#277c8c",bg:"#e8f4f4",surface:"#f9ffff",text:"#18323b"},
+    {id:"amethyst",name:"Amethyst Velvet",accent:"#c2a1eb",bg:"#1b1429",surface:"#322440",text:"#faf3ff"},
+    {id:"copper",name:"Copper Noir",accent:"#d59a72",bg:"#171513",surface:"#30251f",text:"#fff4e9"},
+    {id:"sage",name:"Sage Residence",accent:"#657b57",bg:"#f0f2e9",surface:"#fcfdf8",text:"#283229"},
+    {id:"arctic",name:"Arctic Silver",accent:"#53778e",bg:"#edf2f6",surface:"#ffffff",text:"#1b2a36"},
+    {id:"ruby",name:"Ruby Eclipse",accent:"#ed8794",bg:"#200e18",surface:"#3a202d",text:"#fff4f7"},
+    {id:"lavender",name:"Lavender Cloud",accent:"#8068b0",bg:"#f3effa",surface:"#ffffff",text:"#2b2341"},
+    {id:"graphite",name:"Graphite Studio",accent:"#c6d0d9",bg:"#171b20",surface:"#2b3038",text:"#f6f8fb"}
   ];}
   // V10: Resolve the selected HA theme locally. Never call setTheme() or mutate document styles.
   private crResolvedTheme(){
@@ -1694,7 +1706,7 @@ export class ControlRoomDashboard extends LitElement {
       <label class="welcome-setting-text">Standard-Bildstil<select .value=${this.roomStyle} @change=${(e:Event)=>this.roomStyle=(e.target as HTMLSelectElement).value as typeof this.roomStyle}><option value="3d">Premium 3D</option><option value="photos">Premium Fotos</option><option value="custom">Eigene Fotos</option></select></label>
       <label class="welcome-setting-row"><span>Automatischer Bildwechsel (täglich, 3D / Fotos)</span><input type="checkbox" .checked=${this.roomAutoSwitch} @change=${(e:Event)=>this.roomAutoSwitch=(e.target as HTMLInputElement).checked}/></label>
       <p class="settings-note">Premium Fotos enthält 20 fertige Motive. Optional kannst du eine Foto-URL je Raum hinterlegen. Eigene Bilder werden niemals automatisch gewechselt.</p>
-      ${areas.map(([id,name])=>html`<div class="cr-room-visual-row"><strong>${this.renderIcon(this.roomIcon(name))} ${name}</strong><select .value=${this.roomStyleByArea[id]||""} @change=${(e:Event)=>{const v=(e.target as HTMLSelectElement).value;this.roomStyleByArea={...this.roomStyleByArea,[id]:v};}}><option value="">Standard</option><option value="3d">Premium 3D</option><option value="photos">Premium Fotos</option><option value="custom">Eigene Fotos</option></select><input type="text" placeholder="Optional: anderes Premium-Foto (/local/... oder https://...)" .value=${this.roomPhotoUrls[this.roomKind(name)]||""} @change=${(e:Event)=>{this.roomPhotoUrls={...this.roomPhotoUrls,[this.roomKind(name)]:(e.target as HTMLInputElement).value};}}/><input type="text" placeholder="Eigenes Bild für diesen Raum: /local/..." .value=${this.roomImages[id]||""} @change=${(e:Event)=>{this.roomImages={...this.roomImages,[id]:(e.target as HTMLInputElement).value};}}/></div>`)}
+      <div class="cr-room-visual-grid">${areas.map(([id,name])=>html`<details class="cr-room-visual-card"><summary><span class="cr-room-visual-title">${this.renderIcon(this.roomIcon(name))}<strong>${name}</strong></span><span class="cr-room-visual-summary">${this.roomStyleByArea[id]==="3d"?"Premium 3D":this.roomStyleByArea[id]==="photos"?"Premium Fotos":this.roomStyleByArea[id]==="custom"?"Eigenes Foto":"Standard"}</span>${this.renderIcon("mdi:chevron-down")}</summary><div class="cr-room-visual-fields"><label>Bildstil<select .value=${this.roomStyleByArea[id]||""} @change=${(e:Event)=>{const v=(e.target as HTMLSelectElement).value;this.roomStyleByArea={...this.roomStyleByArea,[id]:v};this.requestUpdate();}}><option value="">Standard</option><option value="3d">Premium 3D</option><option value="photos">Premium Fotos</option><option value="custom">Eigene Fotos</option></select></label><label>Premium-Foto URL <small>Optional · /local/... oder https://...</small><input type="text" placeholder="Foto-Adresse einfügen" .value=${this.roomPhotoUrls[this.roomKind(name)]||""} @change=${(e:Event)=>{this.roomPhotoUrls={...this.roomPhotoUrls,[this.roomKind(name)]:(e.target as HTMLInputElement).value};}}/></label><label>Eigenes Bild <small>Optional · /local/...</small><input type="text" placeholder="Eigenes Bild einfügen" .value=${this.roomImages[id]||""} @change=${(e:Event)=>{this.roomImages={...this.roomImages,[id]:(e.target as HTMLInputElement).value};}}/></label></div></details>`)}</div>
       <div class="cr-room-visual-actions"><button @click=${()=>this.cancelRoomVisualSettings()}>Abbrechen</button><button @click=${()=>this.saveRoomVisualSettings()}>Speichern</button></div></div>`;
   }
 
@@ -3066,6 +3078,40 @@ export class ControlRoomDashboard extends LitElement {
       .dashboard .cr-room-tile-body h2 {font-size:13px!important}
       .dashboard .cr-room-tile-art {aspect-ratio:4/3!important}
     }
+
+
+    /* V16: readable premium settings, no inherited orange focus or dim text */
+    .dashboard .cr-theme-studio,.dashboard .cr-room-visual-editor{color:var(--cr-bg-text)!important}
+    .dashboard .cr-theme-studio h2,.dashboard .cr-theme-studio h3,.dashboard .cr-theme-studio p,.dashboard .cr-theme-studio .settings-note,
+    .dashboard .cr-theme-studio .welcome-setting-row>span,.dashboard .cr-room-visual-editor h2,.dashboard .cr-room-visual-editor p,
+    .dashboard .cr-room-visual-editor .welcome-setting-text,.dashboard .cr-room-visual-editor .welcome-setting-row>span,
+    .dashboard .cr-room-visual-editor .settings-note{color:var(--cr-bg-text)!important;opacity:1!important}
+    .dashboard .cr-theme-style-list button,.dashboard .cr-theme-choice{background:var(--cr-surface)!important;color:var(--cr-text)!important;border-color:color-mix(in srgb,var(--cr-text) 22%,transparent)!important}
+    .dashboard .cr-theme-style-list button strong,.dashboard .cr-theme-style-list button small,.dashboard .cr-theme-choice strong{color:var(--cr-text)!important;opacity:1!important}
+    .dashboard .cr-theme-studio select,.dashboard .cr-room-visual-editor select,.dashboard .cr-room-visual-editor input{background:var(--cr-surface)!important;color:var(--cr-text)!important;border:1px solid color-mix(in srgb,var(--cr-text) 30%,transparent)!important;outline:none!important;box-shadow:none!important;accent-color:var(--cr-accent)!important}
+    .dashboard .cr-theme-studio select:focus-visible,.dashboard .cr-room-visual-editor select:focus-visible,.dashboard .cr-room-visual-editor input:focus-visible{outline:2px solid var(--cr-bg-text)!important;outline-offset:2px!important;border-color:var(--cr-bg-text)!important}
+    .dashboard .cr-theme-studio select option,.dashboard .cr-room-visual-editor select option{background:var(--cr-surface);color:var(--cr-text)}
+    .dashboard .cr-theme-actions,.dashboard .cr-room-visual-actions{position:sticky!important;bottom:0!important;z-index:30!important;display:flex!important;justify-content:flex-end!important;gap:10px!important;padding:15px!important;margin:22px -10px -10px!important;background:var(--cr-bg)!important;border-top:1px solid color-mix(in srgb,var(--cr-bg-text) 18%,transparent)!important;box-shadow:0 -12px 25px color-mix(in srgb,var(--cr-bg) 70%,transparent)!important;border-radius:14px!important}
+    .dashboard .cr-room-visual-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:12px;margin:22px 0}
+    .dashboard .cr-room-visual-card{border:1px solid color-mix(in srgb,var(--cr-text) 18%,transparent);border-radius:16px;background:var(--cr-surface);color:var(--cr-text);overflow:hidden;align-self:start}
+    .dashboard .cr-room-visual-card summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;padding:17px 15px;min-height:58px}
+    .dashboard .cr-room-visual-card summary::-webkit-details-marker{display:none}
+    .dashboard .cr-room-visual-title{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
+    .dashboard .cr-room-visual-title strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cr-text)!important}
+    .dashboard .cr-room-visual-summary{font-size:11px;opacity:.8;white-space:nowrap;color:var(--cr-text)!important}
+    .dashboard .cr-room-visual-card summary ha-icon{color:var(--cr-text)!important;--mdc-icon-size:19px}
+    .dashboard .cr-room-visual-card[open] summary>ha-icon:last-child{transform:rotate(180deg)}
+    .dashboard .cr-room-visual-fields{display:grid;gap:13px;padding:15px;border-top:1px solid color-mix(in srgb,var(--cr-text) 16%,transparent)}
+    .dashboard .cr-room-visual-fields label{display:grid;gap:7px;font-size:12px;font-weight:650;color:var(--cr-text)!important}
+    .dashboard .cr-room-visual-fields small{font-weight:400;color:var(--cr-text)!important;opacity:.75}
+    .dashboard .cr-room-visual-fields input::placeholder{color:var(--cr-text)!important;opacity:.65!important}
+    .dashboard .cr-room-visual-fields input,.dashboard .cr-room-visual-fields select{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:10px}
+    .dashboard .cr-room-visual-actions button,.dashboard .cr-theme-actions button{min-height:42px;border-radius:12px;padding:10px 19px;font-weight:650}
+    .dashboard .cr-room-visual-actions button:last-child,.dashboard .cr-theme-actions button:last-child{background:var(--cr-neutral-button)!important;color:var(--cr-neutral-button-text)!important;border:1px solid var(--cr-neutral-button)!important}
+    .dashboard .cr-room-visual-actions button:first-child,.dashboard .cr-theme-actions button:first-child{background:var(--cr-surface)!important;color:var(--cr-text)!important;border:1px solid color-mix(in srgb,var(--cr-text) 25%,transparent)!important}
+    .dashboard .cr-theme-choice.chosen,.dashboard .cr-theme-style-list button.chosen{border-color:var(--cr-bg-text)!important;box-shadow:inset 0 0 0 1px var(--cr-bg-text)!important}
+    .dashboard .cr-theme-choice.chosen>ha-icon,.dashboard .cr-theme-style-list button.chosen>ha-icon{color:var(--cr-text)!important}
+    @media(max-width:640px){.dashboard .cr-room-visual-grid{grid-template-columns:1fr}.dashboard .cr-room-visual-summary{max-width:95px;overflow:hidden;text-overflow:ellipsis}}
 
 `;
 
