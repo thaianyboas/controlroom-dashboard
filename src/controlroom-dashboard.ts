@@ -1523,27 +1523,89 @@ export class ControlRoomDashboard extends LitElement {
     {id:"ruby",name:"Ruby Eclipse",accent:"#ed8794",bg:"#200e18",surface:"#3a202d",text:"#fff4f7"},
     {id:"lavender",name:"Lavender Cloud",accent:"#8068b0",bg:"#f3effa",surface:"#ffffff",text:"#2b2341"},
     {id:"graphite",name:"Graphite Studio",accent:"#c6d0d9",bg:"#171b20",surface:"#2b3038",text:"#f6f8fb"},
-    ...Array.from({length:1110},(_,i)=>{
-      // 1110 stable identities, spanning the entire color wheel instead of cycling a small palette.
-      const hue=(i*137.50776405+11)%360;
-      const family=Math.floor(i/37)%6;
-      const light=family===1||family===3||family===5;
-      const scheme=i%5;
-      const sat=scheme===0?76:scheme===1?54:scheme===2?88:scheme===3?42:65;
-      const hsl=(h:number,s:number,l:number)=>{
-        const a=s*Math.min(l,100-l)/10000;
-        const f=(n:number)=>{const k=(n+h/30)%12;return Math.round(255*(l/100-a*Math.max(-1,Math.min(k-3,9-k,1)))).toString(16).padStart(2,"0");};
-        return `#${f(0)}${f(8)}${f(4)}`;
-      };
-      const accent=hsl(hue,sat,light?34+(i%4)*3:58+(i%4)*4);
-      const bg=light?hsl((hue+(scheme===4?36:0))%360,18+(i%4)*8,93-(i%5)*2):hsl((hue+(scheme===4?28:0))%360,18+(i%4)*8,8+(i%5)*2);
-      const surface=light?hsl((hue+(scheme===2?25:0))%360,15+(i%4)*9,99-(i%4)*3):hsl((hue+(scheme===2?35:0))%360,18+(i%4)*9,17+(i%5)*3);
-      const text=light?"#20212a":"#faf9f7";
-      const names=["Crimson","Vermilion","Tangerine","Amber","Honey","Lemon","Chartreuse","Fern","Emerald","Jade","Turquoise","Lagoon","Azure","Cobalt","Ultramarine","Indigo","Violet","Orchid","Magenta","Fuchsia","Raspberry","Rose","Coral","Copper"];
-      const familyName=names[Math.floor(hue/15)%names.length];
-      const collections=["Nocturne","Porcelain","Velvet","Atelier","Eclipse","Residence"];
-      return {id:`atelier-original-${String(i+1).padStart(4,"0")}`,name:`${familyName} ${collections[family]} ${String(i+1).padStart(4,"0")}`,accent,bg,surface,text};
-    }),
+    // Signature collections: contrasting ink, metals, jewels, pastels and unexpected pairings.
+    // The text color is deliberately a design choice, not always white or charcoal.
+    ...(() => {
+      const signatures: Array<[string,string,string,string,string]> = [
+        ["Black & Gold","#d9b765","#090909","#201b13","#f2d58d"],
+        ["Bordeaux & Gold","#e5bf75","#2b091b","#49172c","#f5d99a"],
+        ["Onyx & Platinum","#c9d1d8","#090b0e","#22272c","#e8edf2"],
+        ["Silver Monochrome","#555d67","#e2e5e8","#f9fafb","#222830"],
+        ["Scarlet Opera","#ffb3a6","#690b16","#a51928","#fff0e8"],
+        ["Sunflower Silk","#785016","#fff19c","#fffbd8","#44300e"],
+        ["Golden Hour","#53320b","#f5c652","#ffe9a0","#392407"],
+        ["Ruby & Champagne","#f3c6a0","#3b0818","#681b31","#ffe2c0"],
+        ["Emerald & Brass","#d8b76e","#08251e","#174437","#f0d79c"],
+        ["Cobalt & Copper","#e6a676","#0a1a59","#203b82","#f5d3b5"],
+        ["Ivory & Ink","#242a34","#f8f1e5","#fffdf8","#23262c"],
+        ["Midnight & Neon","#7dffcf","#080e18","#142432","#d8fff1"],
+        ["Cherry Lacquer","#ffc4bf","#530914","#8f1c2d","#ffe5e2"],
+        ["Citrus Noir","#e7ee5b","#11160c","#30391a","#f3f5b4"],
+        ["Lavender & Espresso","#dfc2f8","#261621","#4c3048","#f8e4ff"],
+        ["Coral & Teal","#ff9a80","#092e37","#155263","#ffe4d6"],
+        ["Rose & Chocolate","#6b2e45","#f4d6d9","#fff1e9","#562d3b"],
+        ["Copper Foundry","#efad78","#20100c","#4b271c","#ffe0b7"],
+        ["Pistachio Cream","#496633","#e9f2ca","#fafbed","#304629"],
+        ["Ultramarine Pop","#ffd25d","#1429a8","#344bdb","#fff2bc"],
+        ["Crimson & Ivory","#fff1d9","#8c1323","#b8323b","#fff3e1"],
+        ["Aubergine & Lime","#d4f77a","#26102d","#4a2354","#edffb3"],
+        ["Teal & Champagne","#eacba1","#07373b","#17585b","#fff0d8"],
+        ["Blush & Burgundy","#7a2642","#f9dfe6","#fff3f5","#672039"],
+        ["Ice & Vermilion","#c53c28","#e9f5ff","#ffffff","#233747"],
+        ["Saffron & Charcoal","#ffcb45","#17191d","#303338","#ffedb6"],
+        ["Peacock & Gold","#e5c477","#062a38","#145267","#ffe5a4"],
+        ["Lilac & Cobalt","#3454aa","#e8ddff","#f7f2ff","#30305e"],
+        ["Moss & Rose Gold","#eab7a5","#1a291b","#354934","#f8d8c8"],
+        ["Porcelain & Brass","#8b662b","#f9f8f3","#ffffff","#403625"],
+        ["Vermilion Studio","#ffe1a5","#a72616","#d54a28","#fff1d6"],
+        ["Butter & Graphite","#292d35","#ffe778","#fff5bd","#292d35"],
+        ["Fuchsia Night","#ff85e1","#210b28","#4b1b4b","#ffe3f8"],
+        ["Cerulean & Sand","#e7c28c","#073e73","#176299","#fff1d5"],
+        ["Olive & Terracotta","#bc6248","#eee9d0","#faf7e7","#463c29"],
+        ["Tangerine & Navy","#ffae57","#0b1a31","#1b3552","#ffe3bd"],
+        ["Mint & Espresso","#163e34","#bff4d8","#e5fff0","#173a32"],
+        ["Plum & Copper","#df9a71","#290e24","#51203e","#ffe0c9"],
+        ["Arctic & Electric","#294bff","#e9f1ff","#ffffff","#1b2c5d"],
+        ["Bronze & Midnight","#c59b5c","#101b24","#293943","#f0d4a1"],
+        ["Racing Green & Cream","#f2dfb1","#052e20","#17533a","#fff1cc"],
+        ["Petal & Graphite","#33333b","#f9c7d8","#ffe6ee","#3b2630"],
+        ["Lemon & Ink","#f4ed53","#11151d","#2a303b","#fffda9"],
+        ["Indigo & Apricot","#ffb989","#211747","#42316b","#ffe6d3"],
+        ["Wine & Sage","#d7e6b1","#40182d","#63324b","#f0f4d5"],
+        ["Pearl & Black","#151515","#f5f5f2","#ffffff","#151515"],
+        ["Steel & Amber","#e5a645","#29313a","#44505c","#ffdfa5"],
+        ["Lagoon & Flamingo","#ff9fae","#073b42","#15616b","#ffe4ea"],
+        ["Marigold & Plum","#ffc54d","#281126","#4d2649","#ffe7aa"],
+        ["Dusty Blue & Rust","#a94d33","#dbe6ed","#f5f8f9","#293b4b"],
+        ["Brick & Mint","#b7ffe4","#512319","#7b3b2a","#dcfff1"],
+        ["Chocolate & Vanilla","#cfa56b","#24180f","#463023","#ffe9c9"],
+        ["Turquoise & Ink","#53eadb","#0a1520","#163344","#d5fff8"],
+        ["Poppy & Cream","#b72e28","#fff0df","#fffaf3","#4e3028"],
+        ["Amethyst & Gold","#e5c578","#20102d","#40274e","#ffe7b0"],
+        ["Slate & Coral","#ff9c89","#182b3a","#32475a","#ffe5df"],
+        ["Jade & Ivory","#205747","#d9f4e9","#f7fffb","#183c32"],
+        ["Papaya & Orchid","#6e2b71","#ffd8b0","#fff0db","#552d55"],
+        ["Violet & Chartreuse","#e4fa7d","#2e1649","#553070","#f4ffc2"],
+        ["Flame & Carbon","#ff734b","#111214","#302222","#ffe1ce"],
+      ];
+      // Each subsequent collection changes the background and surface, not just the accent.
+      // The permutation spreads signature families across every page instead of repeating triples.
+      const families=["Signature","Lacquer","Velvet","Brushed","Satin","Studio","Dusk","Dawn","Heritage","Modern","Silk","Noir","Opaline","Electric","Atelier","Residence","Muse","Gallery","Couture"];
+      const hex=(value:string)=>[1,3,5].map(k=>parseInt(value.slice(k,k+2),16));
+      const rgb=(values:number[])=>`#${values.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join("")}`;
+      const mix=(a:string,b:string,t:number)=>rgb(hex(a).map((v,k)=>v*(1-t)+hex(b)[k]*t));
+      const generated=Array.from({length:1110},(_,i)=>{
+        const signature=signatures[(i*37+Math.floor(i/60))%signatures.length];
+        const family=Math.floor(i/signatures.length);
+        const [name,accent,bg,surface,text]=signature;
+        const mode=family%5;
+        const accent2=mode===0?accent:mode===1?mix(accent,text,.24):mode===2?mix(accent,bg,.17):mode===3?mix(accent,surface,.22):mix(accent,text,.12);
+        const bg2=mode===0?bg:mode===1?mix(bg,surface,.17):mode===2?mix(bg,surface,.36):mode===3?mix(bg,surface,.08):mix(bg,surface,.26);
+        const surface2=mode===0?surface:mode===1?mix(surface,bg,.22):mode===2?mix(surface,bg,.08):mode===3?mix(surface,bg,.34):mix(surface,bg,.15);
+        return {id:`signature-${String(i+1).padStart(4,"0")}`,name:`${name} · ${families[family%families.length]} ${String(i+1).padStart(4,"0")}`,accent:accent2,bg:bg2,surface:surface2,text};
+      });
+      return generated;
+    })(),
   ];}
   // V10: Resolve the selected HA theme locally. Never call setTheme() or mutate document styles.
   private crResolvedTheme(){
@@ -1686,12 +1748,13 @@ export class ControlRoomDashboard extends LitElement {
       <button class="settings-back" @click=${()=>this.cancelCRTheme()}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>
       <div class="cr-room-visual-head"><div class="cr-room-kicker">CONTROLROOM · DESIGN COLLECTION</div><h2>Theme Atelier</h2><p>${all.length} exklusive ControlRoom Farbwelten. Entdecke deinen persönlichen Look.</p></div>
       <div class="cr-theme-current"><span class="cr-theme-current-swatch" style=${`background:linear-gradient(135deg,${selected.bg},${selected.surface} 58%,${selected.accent})`}></span><span><small>AKTUELLE AUSWAHL</small><strong>${selected.name}</strong><small>${this.crThemeStyle==="glass"?"Glass Premium":this.crThemeStyle==="solid"?"Modern Solid":"Minimal"}</small></span>${this.renderIcon("mdi:check-decagram")}</div>
+      <section class="cr-style-gallery" aria-label="Visual Style"><div class="cr-style-gallery-head"><span class="cr-room-kicker">OBERFLÄCHEN · LIVE-VORSCHAU</span><h3>Visual Style</h3><p>Wähle die Oberfläche – die Vorschau übernimmt deine aktuelle Farbwelt.</p></div><div class="cr-theme-style-list">${([['glass','Glass Premium','Transparenz und weiche Glaseffekte'],['solid','Modern Solid','Klare, elegante Oberflächen'],['minimal','Minimal','Reduziert und kompakt']] as const).map(([id,title,desc])=>html`<button type="button" class="cr-style-option ${id} ${this.crThemeStyle===id?'chosen':''}" aria-pressed=${this.crThemeStyle===id?'true':'false'} @click=${()=>{this.crThemeStyle=id;this.requestUpdate();}}><span class="cr-style-scene"><span class="cr-style-scene-header"><i></i><i></i><i></i></span><span class="cr-style-scene-body"><span class="cr-style-scene-main"><i></i><i></i><i></i></span><span class="cr-style-scene-side"><i></i><i></i></span></span></span><span class="cr-style-option-info"><strong>${title}</strong><small>${desc}</small></span>${this.crThemeStyle===id?html`<span class="cr-style-selected">${this.renderIcon("mdi:check-circle")}</span>`:nothing}</button>`)}</div></section>
       <div class="cr-theme-tools"><label class="cr-theme-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Farbwelt suchen …" .value=${this.crThemeSearch} @input=${(e:Event)=>{this.crThemeSearch=(e.target as HTMLInputElement).value;this.crThemePage=0;}} /></label><div class="cr-theme-filters">${([['all','Alle'],['favorites','Klassiker'],['dark','Dunkel'],['light','Hell']] as const).map(([id,name])=>html`<button class=${this.crThemeFilter===id?'active':''} @click=${()=>{this.crThemeFilter=id;this.crThemePage=0;}}>${name}</button>`)}</div></div>
       <div class="cr-theme-collection-heading"><h3>Farbwelten</h3><span>${filtered.length} Designs · Seite ${page+1} / ${pages}</span></div>
-      <div class="cr-theme-grid">${visible.map(p=>html`<button class="cr-theme-choice ${this.crTheme===p.id?'chosen':''}" @click=${()=>{this.crTheme=p.id;this.crThemeSource="controlroom";this.requestUpdate();}}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface}`}></i><i style=${`background:${p.surface}`}></i></span><strong>${p.name}</strong>${this.crTheme===p.id?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
+      <div class="cr-theme-grid">${visible.map(p=>html`<button class="cr-theme-choice ${this.crTheme===p.id?'chosen':''}" @click=${()=>{this.crTheme=p.id;this.crThemeSource="controlroom";this.requestUpdate();}}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface};color:${p.text}`}></i><i style=${`background:${p.surface};color:${p.text}`}></i><em class="cr-theme-sample-text" style=${`color:${p.text}`}>Aa</em><b class="cr-theme-sample-action" style=${`background:${p.accent};border:1px solid ${p.text}55`}></b></span><strong>${p.name}</strong>${this.crTheme===p.id?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
       ${filtered.length===0?html`<p class="settings-note">Keine Farbwelt gefunden. Probiere einen anderen Suchbegriff.</p>`:nothing}
       ${pages>1?html`<nav class="cr-theme-pagination" aria-label="Farbwelten Seiten"><button class="cr-page-nav" ?disabled=${page===0} @click=${()=>{this.crThemePage=Math.max(0,page-1);}}>${this.renderIcon("mdi:chevron-left")}<span>Zurück</span></button><div class="cr-page-center"><span class="cr-page-eyebrow">KOLLEKTION</span><label class="cr-page-select"><select aria-label="Seite auswählen" .value=${String(page)} @change=${(e:Event)=>{this.crThemePage=Number((e.target as HTMLSelectElement).value);}}>${Array.from({length:pages},(_,i)=>html`<option value=${String(i)}>Seite ${i+1} / ${pages}</option>`)}</select>${this.renderIcon("mdi:chevron-down")}</label><div class="cr-page-progress"><span style=${`width:${((page+1)/pages)*100}%`}></span></div></div><button class="cr-page-nav" ?disabled=${page>=pages-1} @click=${()=>{this.crThemePage=Math.min(pages-1,page+1);}}><span>Weiter</span>${this.renderIcon("mdi:chevron-right")}</button></nav>`:nothing}
-      <h3>Visual Style</h3><div class="cr-theme-style-list">${([['glass','Glass Premium','Transparenz und weiche Glaseffekte'],['solid','Modern Solid','Klare, elegante Oberflächen'],['minimal','Minimal','Reduziert und kompakt']] as const).map(([id,title,desc])=>html`<button class=${this.crThemeStyle===id?'chosen':''} @click=${()=>{this.crThemeStyle=id;this.requestUpdate();}}><strong>${title}</strong><small>${desc}</small>${this.crThemeStyle===id?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
+
       <div class="cr-theme-actions"><span class="cr-theme-action-caption">${selected.name}</span><button @click=${()=>this.cancelCRTheme()}>Abbrechen</button><button @click=${()=>this.saveCRTheme()}>Speichern</button></div>
     </div>`;
   }
@@ -3153,6 +3216,9 @@ export class ControlRoomDashboard extends LitElement {
     @media(max-width:640px){.dashboard .cr-room-visual-grid{grid-template-columns:1fr}.dashboard .cr-room-visual-summary{max-width:95px;overflow:hidden;text-overflow:ellipsis}}
 
 
+    .dashboard .cr-theme-preview{position:relative;overflow:hidden}
+    .dashboard .cr-theme-preview .cr-theme-sample-text{position:absolute;right:13px;top:9px;font:700 14px/1 sans-serif;opacity:.95;z-index:2}
+    .dashboard .cr-theme-preview .cr-theme-sample-action{position:absolute;right:13px;bottom:10px;width:28px;height:10px;border-radius:12px;z-index:2}
     /* V17 — Curated ControlRoom Theme Atelier */
     .dashboard .cr-theme-studio-v17{padding-bottom:115px!important;max-width:1000px!important}
     .dashboard .cr-theme-studio-v17 .cr-theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
@@ -3225,6 +3291,37 @@ export class ControlRoomDashboard extends LitElement {
       .dashboard .settings-center:has(.settings-save-bar){padding-bottom:175px!important}
     }
     @media(max-width:700px){.dashboard .cr-theme-studio-v17 .cr-theme-actions{left:0!important;width:100%!important;border-radius:16px 16px 0 0!important}.dashboard .cr-theme-action-caption{display:none}.dashboard .cr-theme-studio-v17 .cr-theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    /* V22: Visual Style gallery, with responsive live previews */
+    .dashboard .cr-theme-studio-v17{container-type:inline-size;min-width:0!important;width:100%!important;max-width:none!important;box-sizing:border-box!important}
+    .dashboard .cr-style-gallery{margin:22px 0 26px;min-width:0}
+    .dashboard .cr-style-gallery-head{margin-bottom:15px}
+    .dashboard .cr-style-gallery-head h3{margin:5px 0 4px;font-size:19px;color:var(--cr-text)!important}
+    .dashboard .cr-style-gallery-head p{margin:0;font-size:12px;color:var(--cr-muted)!important;line-height:1.5}
+    .dashboard .cr-style-gallery .cr-theme-style-list{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:13px!important}
+    .dashboard .cr-style-gallery .cr-style-option{display:flex!important;flex-direction:column!important;align-items:stretch!important;position:relative!important;min-width:0!important;padding:10px!important;gap:10px!important;text-align:left!important;overflow:hidden!important;border-radius:17px!important;cursor:pointer!important;transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease!important}
+    .dashboard .cr-style-gallery .cr-style-option:hover{transform:translateY(-2px)}
+    .dashboard .cr-style-gallery .cr-style-option.chosen{border-color:var(--cr-accent)!important;box-shadow:inset 0 0 0 1px var(--cr-accent),0 7px 25px color-mix(in srgb,var(--cr-accent) 14%,transparent)!important}
+    .dashboard .cr-style-scene{display:flex;flex-direction:column;gap:9px;position:relative;isolation:isolate;height:115px;min-width:0;overflow:hidden;border-radius:12px;padding:11px;background:linear-gradient(140deg,var(--cr-bg),var(--cr-surface));border:1px solid color-mix(in srgb,var(--cr-text) 13%,transparent)}
+    .dashboard .cr-style-scene-header{display:flex;gap:5px;align-items:center}
+    .dashboard .cr-style-scene-header i{display:block;width:7px;height:7px;border-radius:50%;background:var(--cr-accent)}
+    .dashboard .cr-style-scene-header i:nth-child(2){opacity:.55}.dashboard .cr-style-scene-header i:nth-child(3){opacity:.25}
+    .dashboard .cr-style-scene-body{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:8px;flex:1;min-height:0}
+    .dashboard .cr-style-scene-main,.dashboard .cr-style-scene-side{display:flex;flex-direction:column;gap:7px;padding:10px;min-width:0;border:1px solid color-mix(in srgb,var(--cr-text) 14%,transparent)}
+    .dashboard .cr-style-scene-main i,.dashboard .cr-style-scene-side i{display:block;height:7px;border-radius:6px;background:color-mix(in srgb,var(--cr-text) 20%,transparent)}
+    .dashboard .cr-style-scene-main i:first-child{background:var(--cr-accent);width:65%}.dashboard .cr-style-scene-main i:nth-child(2){width:88%}.dashboard .cr-style-scene-main i:nth-child(3){width:55%}.dashboard .cr-style-scene-side i{height:24px}
+    .dashboard .cr-style-option.glass .cr-style-scene-main,.dashboard .cr-style-option.glass .cr-style-scene-side{border-radius:13px;background:color-mix(in srgb,var(--cr-text) 10%,transparent);backdrop-filter:blur(12px);box-shadow:inset 0 1px color-mix(in srgb,var(--cr-text) 15%,transparent),0 8px 18px #0002}
+    .dashboard .cr-style-option.solid .cr-style-scene-main,.dashboard .cr-style-option.solid .cr-style-scene-side{border-radius:9px;background:var(--cr-surface);box-shadow:0 4px 8px #0001}
+    .dashboard .cr-style-option.minimal .cr-style-scene-main,.dashboard .cr-style-option.minimal .cr-style-scene-side{border-radius:3px;background:transparent;border:0;border-top:1px solid color-mix(in srgb,var(--cr-text) 24%,transparent);padding:8px 2px;box-shadow:none}
+    .dashboard .cr-style-option-info{display:flex;flex-direction:column;gap:4px;min-width:0;padding:2px 3px 4px}
+    .dashboard .cr-style-option-info strong{font-size:13px!important;line-height:1.35}.dashboard .cr-style-option-info small{font-size:11px!important;line-height:1.45}
+    .dashboard .cr-style-selected{position:absolute;right:16px;top:16px;color:var(--cr-accent)!important;background:var(--cr-surface);border-radius:50%;padding:3px;display:flex}
+    .dashboard .cr-style-selected ha-icon{--mdc-icon-size:19px;color:var(--cr-accent)!important}
+    .dashboard .cr-theme-studio-v17 .cr-theme-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr))!important}
+    @container (max-width:650px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+    @container (max-width:420px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:minmax(0,1fr)!important}.dashboard .cr-style-scene{height:105px}.dashboard .cr-theme-studio-v17 .cr-theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+    @media(max-width:650px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+    @media(max-width:400px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:1fr!important}}
+
 `;
 
   protected render() {
