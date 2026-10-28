@@ -325,6 +325,43 @@ export class ControlRoomDashboard extends LitElement {
 
   @state() private settingsSection: "overview" | "welcome" | "smartbar" | "appearance" | "devices" | "system" | "rooms" | "themes" = "overview";
   @state() private settingsSearch = "";
+  @state() private crFontSize = 110;
+  @state() private crFontSaving = false;
+  @state() private crFontMessage = "";
+  private crFontRequest = 0;
+  private crFontCacheKey(user: string) { return `controlroom-font-v34:${user}`; }
+  private crValidFont(value: unknown): number | null {
+    const n = Number(value);
+    return Number.isFinite(n) && [90, 100, 110, 120].includes(n) ? n : null;
+  }
+  private crRestoreFont(user: string): void {
+    try { const n=this.crValidFont(localStorage.getItem(this.crFontCacheKey(user))); if(n!==null) this.crFontSize=n; } catch { /* storage blocked */ }
+  }
+  private async crSetFontSize(size: number): Promise<void> {
+    if(this.crValidFont(size)===null)return;
+    this.crFontSize=size;
+    const user=this.hass?.user?.id;
+    if(user) try {localStorage.setItem(this.crFontCacheKey(user),String(size));} catch { /* storage blocked */ }
+    if(!user || !this.hass?.callWS){this.crFontMessage="Lokal gespeichert";return;}
+    const request=++this.crFontRequest;
+    this.crFontSaving=true;this.crFontMessage="";
+    try {
+      await this.hass.callWS({type:"controlroom_preferences/set_font",font_size:size});
+      if(request===this.crFontRequest)this.crFontMessage="Synchronisiert ✓";
+    }catch(error){
+      if(request===this.crFontRequest)this.crFontMessage="Lokal gespeichert · Integration aktualisieren";
+      console.warn("ControlRoom: font sync requires Preferences v1.1",error);
+    }finally{if(request===this.crFontRequest)this.crFontSaving=false;}
+  }
+  private renderFontSetting(){
+    return html`<div class="cr-font-setting">
+      <div class="cr-font-label"><span>${this.renderIcon("mdi:format-size")}<strong>Schriftgröße</strong></span><span class="cr-font-percent">${this.crFontSize}%</span></div>
+      <div class="cr-font-choices" role="group" aria-label="Schriftgröße">
+        ${([90,100,110,120] as const).map(size=>html`<button type="button" class=${size===this.crFontSize?"active":""} aria-pressed=${size===this.crFontSize} @click=${()=>{void this.crSetFontSize(size);}}>${size}%</button>`)}
+      </div>
+      ${this.crFontMessage?html`<small class="cr-font-status">${this.crFontMessage}</small>`:nothing}
+    </div>`;
+  }
 
   @state()
   private currentTime = new Date();
@@ -364,6 +401,7 @@ export class ControlRoomDashboard extends LitElement {
   @state() private crHAMode: "auto" | "light" | "dark" = "auto";
   private crThemeSnapshot = "";
   private crRemoteUser = "";
+  private crCacheUser = "";
   private crRemoteLoading = false;
   private crRemoteReady = false;
   private crRemoteSaving = false;
@@ -579,6 +617,29 @@ export class ControlRoomDashboard extends LitElement {
     return 12;
   }
 
+  // Apply the last verified theme for this HA user before the first paint.
+  protected willUpdate(): void {
+    const user = this.hass?.user?.id;
+    if (!user || user === this.crCacheUser) return;
+    this.crCacheUser = user;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`controlroom-theme-user-v32:${user}`) || "null");
+      if (saved && this.crPalettes().some(p => p.id === saved.theme)) {
+        this.crTheme = saved.theme;
+        if (["glass", "solid", "minimal"].includes(saved.style)) this.crThemeStyle = saved.style;
+        this.crRemoteReady = true; // cached presentation; remote still refreshes it
+      } else {
+        this.crRemoteReady = false;
+      }
+    } catch { this.crRemoteReady = false; }
+  }
+
+  private cacheVerifiedTheme(user: string): void {
+    try {
+      localStorage.setItem(`controlroom-theme-user-v32:${user}`, JSON.stringify({theme:this.crTheme,style:this.crThemeStyle}));
+    } catch { /* Private mode / storage unavailable */ }
+  }
+
   protected updated(): void {
     void this.refreshWasteEvents();
     if(this.hass?.user?.id && this.hass.callWS && this.crRemoteUser!==this.hass.user.id && !this.crRemoteLoading){
@@ -629,6 +690,7 @@ export class ControlRoomDashboard extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this.restorePreferences();
+    if(this.hass?.user?.id)this.crRestoreFont(this.hass.user.id);
     try {
       const saved=JSON.parse(localStorage.getItem("controlroom-theme-v1")||"{}");
       const standard=JSON.parse(localStorage.getItem("controlroom-theme-default-v1")||"{}");
@@ -970,7 +1032,7 @@ export class ControlRoomDashboard extends LitElement {
     if (section === "overview") return html`<div class="settings-center">
       <div class="settings-intro"><h1>Einstellungen</h1><p>Gestalte dein Zuhause, ganz nach deinen Wünschen.</p></div>
       <label class="settings-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Einstellungen durchsuchen…" .value=${this.settingsSearch} @input=${(e:Event) => {this.settingsSearch = (e.target as HTMLInputElement).value;}} aria-label="Einstellungen durchsuchen" /></label>
-      ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => html`<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c=>c.group===group).map(c=>html`<button class="settings-option" @click=${()=>{if(c.id==="welcome" || c.id==="smartbar") this.beginSettingsEdit(c.id); else {this.settingsSection=c.id;if(c.id==="rooms") this.roomStyleSnapshot=JSON.stringify({style:this.roomStyle,auto:this.roomAutoSwitch,byArea:this.roomStyleByArea,photos:this.roomPhotoUrls,images:this.roomImages});if(c.id==="themes")this.crThemeSnapshot=JSON.stringify(this.crThemeData());}}}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div></section>`) : html`<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
+      ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => html`<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c=>c.group===group).map(c=>html`<button class="settings-option" @click=${()=>{if(c.id==="welcome" || c.id==="smartbar") this.beginSettingsEdit(c.id); else {this.settingsSection=c.id;if(c.id==="rooms") this.roomStyleSnapshot=JSON.stringify({style:this.roomStyle,auto:this.roomAutoSwitch,byArea:this.roomStyleByArea,photos:this.roomPhotoUrls,images:this.roomImages});if(c.id==="themes")this.crThemeSnapshot=JSON.stringify(this.crThemeData());}}}><span class="settings-option-icon">${this.renderIcon(c.icon)}</span><span class="settings-option-copy"><strong>${c.title}</strong><small>${c.description}</small></span>${this.renderIcon("mdi:chevron-right")}</button>`)}</div>${group==="Darstellung" && (!this.settingsSearch.trim() || "schriftgröße typografie darstellung".includes(this.settingsSearch.toLocaleLowerCase().trim()))?this.renderFontSetting():nothing}</section>`) : html`<p class="settings-empty">Keine passenden Einstellungen gefunden.</p>`}
       <p class="settings-local-note">Änderungen werden auf diesem Browser / Display gespeichert.</p>
     </div>`;
     if (section === "themes") return this.renderThemeSettings();
@@ -1228,7 +1290,27 @@ export class ControlRoomDashboard extends LitElement {
     } catch(error) { console.error(this.t("lightActionError"),error); }
   }
 
-  private renderPendant(on: boolean, brightness: number = 75) {
+  private pendantLightColor(lights: HAEntity[]): string {
+    const active = lights.filter(light => light.state === "on");
+    if (!active.length) return "#3b3c42";
+    const colors = active.map(light => {
+      const a = light.attributes;
+      const rgb = a.rgb_color;
+      if (Array.isArray(rgb) && rgb.length >= 3 && rgb.slice(0,3).every(v => typeof v === "number" && Number.isFinite(v)))
+        return rgb.slice(0,3) as number[];
+      const kelvin = Number(a.color_temp_kelvin) || (Number(a.color_temp) > 0 ? 1000000 / Number(a.color_temp) : 0);
+      if (kelvin > 0) {
+        const k = Math.max(1800, Math.min(6500, kelvin));
+        const mix = (k - 1800) / 4700;
+        return [255 - 35 * mix, 193 + 43 * mix, 125 + 130 * mix];
+      }
+      return [255, 244, 221];
+    });
+    const avg = [0,1,2].map(i => Math.round(colors.reduce((sum,c) => sum+c[i],0)/colors.length));
+    return `rgb(${avg.join(",")})`;
+  }
+
+  private renderPendant(on: boolean, brightness: number = 75, emission = "#fff4dd") {
     // The pendant keeps its signature silhouette. Its light and metallic details
     // follow the selected ControlRoom palette instead of hardcoded purple.
     const theme = this.crResolvedTheme();
@@ -1255,7 +1337,7 @@ export class ControlRoomDashboard extends LitElement {
       <path d="M69 60Q45 69 31 111Q75 127 119 111Q105 69 81 60Z"
         fill="url(#cr-metal)" stroke=${rim}/>
       <ellipse cx="75" cy="111" rx="44" ry="8" fill=${on ? accent : metal}/>
-      <ellipse cx="75" cy="112" rx="26" ry="4" fill=${on ? theme.fg : rim} opacity=${on ? "0.95" : "0.35"}/>
+      <ellipse cx="75" cy="112" rx="26" ry="4" fill=${on ? emission : rim} opacity=${on ? "0.95" : "0.35"}/>
     </svg>`;
   }
 
@@ -1279,7 +1361,7 @@ export class ControlRoomDashboard extends LitElement {
 
     return html`
       <article class="overview-card lights-card premium-lights ${on?"has-light":""}">
-        <div class="pendant-corner">${this.renderPendant(on>0,avg)}</div>
+        <div class="pendant-corner">${this.renderPendant(on>0,avg,this.pendantLightColor(lights))}</div>
         <div class="premium-lights-content">
           <div class="card-icon">${this.renderIcon("mdi:lightbulb-on-outline")}</div>
           <div class="card-title">${this.t("lights")}</div>
@@ -1344,7 +1426,7 @@ export class ControlRoomDashboard extends LitElement {
               <button ?disabled=${!this.hass?.callService} @click=${()=>this.setAllLights(false,lights)}>${this.renderIcon("mdi:weather-night")}${this.t("allOff")}</button>
             </div>
           </div>
-          <div class="studio-pendant">${this.renderPendant(on>0,avg)}</div>
+          <div class="studio-pendant">${this.renderPendant(on>0,avg,this.pendantLightColor(lights))}</div>
         </div>
         <div class="ambient-rooms">
           ${rooms.map(room=>{
@@ -1438,7 +1520,14 @@ export class ControlRoomDashboard extends LitElement {
     return html`
       <aside class="sidebar ${this.mobileMenuOpen ? "open" : ""}">
         <div class="brand">
-          <div class="brand-symbol">C</div>
+          <div class="brand-symbol" aria-label="ControlRoom">
+            <svg viewBox="0 0 48 48" width="34" height="34" aria-hidden="true">
+              <path d="M24 3 40 12v18L24 44 8 34V16Z" fill="none" stroke="#d7b783" stroke-width="2.5" stroke-linejoin="round"/>
+              <path d="M30 15 22 11 14 18v14l10 7" fill="none" stroke="#f5f0e9" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M23 22h9v9l-8 5" fill="none" stroke="#d7b783" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="32" cy="22" r="2" fill="#f5f0e9"/>
+            </svg>
+          </div>
           <div>
             <div class="brand-name">ControlRoom</div>
             <div class="brand-subtitle">
@@ -1730,7 +1819,7 @@ export class ControlRoomDashboard extends LitElement {
     const t=this.crResolvedTheme();
     const radius=this.crThemeStyle==="minimal"?"9px":this.crThemeStyle==="solid"?"15px":"22px";
     const css:Record<string,string>={
-      "--cr-accent":t.accent,"--cr-bg":t.bg,"--cr-surface":t.surface,"--cr-text":t.fg,"--cr-bg-text":t.bgFg,"--cr-on-accent":t.onAccent,"--cr-muted":t.muted,"--cr-secondary":`color-mix(in srgb, ${t.fg} 77%, ${t.accent} 23%)`,
+      "--cr-font-scale":String(this.crFontSize/100),"--cr-accent":t.accent,"--cr-bg":t.bg,"--cr-surface":t.surface,"--cr-text":t.fg,"--cr-bg-text":t.bgFg,"--cr-on-accent":t.onAccent,"--cr-muted":t.muted,"--cr-secondary":`color-mix(in srgb, ${t.fg} 77%, ${t.accent} 23%)`,
       "--cr-neutral-bg":t.neutralBg,"--cr-neutral-surface":t.neutralSurface,"--cr-neutral-button":t.neutralButton,"--cr-neutral-button-text":t.neutralButtonText,
       "--cr-is-light":t.light?"1":"0","--cr-radius":radius,"--cr-blur":this.crThemeStyle==="glass"?"blur(22px)":"none",
       "--primary-color":t.accent,"--accent-color":t.accent,"--primary-text-color":t.fg,"--secondary-text-color":t.muted,
@@ -1776,6 +1865,7 @@ export class ControlRoomDashboard extends LitElement {
     if(!user || !this.hass?.callWS || this.crRemoteLoading)return;
     this.crRemoteLoading=true;
     try{
+      this.crRestoreFont(user);
       const result=await this.hass.callWS({type:"controlroom_preferences/get"}) as Record<string,unknown>;
       if(this.hass?.user?.id!==user)return;
       const valid=(v:unknown)=>typeof v==="string" && this.crPalettes().some(p=>p.id===v);
@@ -1784,12 +1874,16 @@ export class ControlRoomDashboard extends LitElement {
       if(style(result.style))this.crThemeStyle=result.style;
       if(valid(result.default_theme))this.crDefaultTheme=result.default_theme as string;
       if(style(result.default_style))this.crDefaultStyle=result.default_style;
+      const remoteFont=this.crValidFont(result.font_size);
+      if(remoteFont!==null){this.crFontSize=remoteFont;try{localStorage.setItem(this.crFontCacheKey(user),String(remoteFont));}catch{ /* storage blocked */ }}
+      this.cacheVerifiedTheme(user);
       this.crRemoteUser=user;this.crRemoteReady=true;
       this.requestUpdate();
     }catch(error){
       // Integration missing: retain local settings, retry after a later HA reload.
       this.crRemoteUser=user;
-      this.crRemoteReady=false;
+      this.crRemoteReady=true;
+      this.requestUpdate();
       console.warn("ControlRoom Preferences: install/configure integration",error);
     }finally{this.crRemoteLoading=false;}
   }
@@ -1801,6 +1895,7 @@ export class ControlRoomDashboard extends LitElement {
     try{
       await this.hass.callWS({type:"controlroom_preferences/set",theme:this.crTheme,style:this.crThemeStyle,default:makeDefault});
       this.crRemoteReady=true;
+      this.cacheVerifiedTheme(this.hass.user.id);
       if(makeDefault){this.crDefaultTheme=this.crTheme;this.crDefaultStyle=this.crThemeStyle;}
       this.crDefaultFeedback=makeDefault?"Als Standard gespeichert ✓":"Gespeichert ✓";
       this.requestUpdate();return true;
@@ -2548,7 +2643,7 @@ export class ControlRoomDashboard extends LitElement {
     .pref-title {margin:18px 0 9px;color:var(--cr-muted);font-size:12px;font-weight:650}
     .pref-modes {display:flex;gap:7px;flex-wrap:wrap}
     .pref-modes button {padding:8px 12px;border:1px solid rgba(255,255,255,.13);border-radius:999px;background:rgba(255,255,255,.04);color:var(--cr-text);cursor:pointer;font-size:12px}
-    .pref-modes button.active {background:color-mix(in srgb,var(--cr-accent) 30%,transparent);border-color:color-mix(in srgb,var(--cr-accent) 45%,transparent);color:#fff}
+    .pref-modes button.active {background:color-mix(in srgb,var(--cr-accent) 24%,var(--cr-surface));border-color:var(--cr-accent);color:var(--cr-text)}
     .pref-list {display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:7px}
     .pref-check {display:flex;align-items:center;gap:9px;min-width:0;padding:9px 11px;border:1px solid rgba(255,255,255,.06);border-radius:11px;background:rgba(255,255,255,.025);font-size:12px;color:#e7deee;cursor:pointer}
     .pref-check input {accent-color:var(--cr-accent)}
@@ -2565,7 +2660,7 @@ export class ControlRoomDashboard extends LitElement {
     .studio-total { font-size:12px; color:var(--cr-muted); }
     .studio-hero { position:relative; display:flex; min-height:220px; overflow:hidden; padding:26px 28px; border:1px solid color-mix(in srgb,var(--cr-accent) 20%,transparent); border-radius:22px; background:linear-gradient(110deg,color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)),var(--cr-surface)); }
     .studio-hero.lit { background:radial-gradient(ellipse at 88% 85%,rgba(223,158,78,.22),transparent 48%),linear-gradient(110deg,color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)),var(--cr-surface)); }
-    .studio-hero-info { position:relative; z-index:1; width:min(70%,540px); }
+    .studio-hero-info { position:relative; z-index:1; width:min(70%,540px); min-width:0; }
     .studio-kicker { font-size:11px; font-weight:700; letter-spacing:.15em; color:var(--cr-muted); }
     .studio-mood { margin:13px 0 4px; font-size:clamp(23px,2.6vw,34px); font-weight:750; letter-spacing:-.045em; color:#fff5fa; line-height:1.15; }
     .studio-mood-subtitle { color:var(--cr-muted); font-size:12px; line-height:1.5; }
@@ -2579,6 +2674,11 @@ export class ControlRoomDashboard extends LitElement {
     .studio-actions button:disabled { opacity:.4; }
     .studio-actions ha-icon { --mdc-icon-size:16px; }
     .studio-pendant { position:absolute; right:30px; top:-21px; width:195px; pointer-events:none; }
+    @media (min-width:601px) and (max-width:950px) {
+      .studio-pendant {right:-12px; width:clamp(125px,19vw,185px);}
+      .studio-hero-info {width:calc(100% - 135px);}
+    }
+
     .ambient-rooms { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:10px; margin-top:14px; }
     .ambient-room { position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:7px; min-height:105px; padding:14px; overflow:hidden; border-radius:16px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.035); color:var(--cr-muted); text-align:left; cursor:pointer; }
     .ambient-room.illuminated { border-color:rgba(231,178,109,.35); }
@@ -2592,10 +2692,10 @@ export class ControlRoomDashboard extends LitElement {
     @media (prefers-reduced-motion:reduce) { .ambient-room-glow { transition:none; } }
     .studio-tabs { display:grid; grid-template-columns:1fr 1fr; margin:18px 0 12px; padding:4px; border-radius:999px; background:rgba(255,255,255,.035); }
     .studio-tabs button { border:0; padding:9px; border-radius:999px; color:var(--cr-muted); background:transparent; cursor:pointer; }
-    .studio-tabs button.active { background:color-mix(in srgb,var(--cr-accent) 20%,transparent); color:#fff; }
+    .studio-tabs button.active { background:color-mix(in srgb,var(--cr-accent) 20%,var(--cr-surface)); color:var(--cr-text); }
     .room-filters { display:flex; gap:7px; overflow-x:auto; padding-bottom:12px; }
     .room-filters button { white-space:nowrap; padding:7px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.16); background:transparent; color:var(--cr-muted); cursor:pointer; }
-    .room-filters button.active { background:#e6dbe9; color:color-mix(in srgb,var(--cr-bg) 82%,var(--cr-accent)); }
+    .room-filters button.active { background:color-mix(in srgb,var(--cr-accent) 24%,var(--cr-surface)); color:var(--cr-text); border-color:var(--cr-accent); }
     .studio-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
     .studio-light { position:relative; min-height:100px; padding:12px; border-radius:18px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.045); }
     .studio-light.selected { border-color:color-mix(in srgb,var(--cr-accent) 65%,transparent); background:color-mix(in srgb,var(--cr-accent) 14%,transparent); }
@@ -2767,7 +2867,7 @@ export class ControlRoomDashboard extends LitElement {
     .studio-inline-color-line { display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--cr-muted);font-size:11px; }
     .studio-inline-color-line .studio-inline-slider { max-width:65%; }
     .studio-inline-color-line .studio-color-picker { width:35px;height:29px; }
-    @media (max-width:600px) { .studio-grid { grid-template-columns:1fr; } .studio-hero { padding:22px 18px; } .studio-hero-info { width:80%; } .studio-mood { font-size:23px; } .studio-mood-subtitle { max-width:220px; } .studio-pendant { right:-38px; opacity:.65; } }
+    @media (max-width:600px) { .studio-grid { grid-template-columns:1fr; } .studio-hero { padding:22px 18px; } .studio-hero-info { width:80%; } .studio-mood { font-size:23px; } .studio-mood-subtitle { max-width:220px; } .studio-pendant { right:-18px; width:135px; opacity:.85; } }
 
     @media (prefers-reduced-motion: reduce) {
       .weather-icon { animation: none; }
@@ -3536,9 +3636,67 @@ export class ControlRoomDashboard extends LitElement {
       .dashboard .settings-save-bar .settings-save{flex:1 1 0!important}
     }
 
+
+    /* V33 — Lighting room selectors and filters respect the active Theme Atelier palette. */
+    .dashboard .room-filters button {
+      background:color-mix(in srgb,var(--cr-surface) 88%,transparent)!important;
+      border-color:color-mix(in srgb,var(--cr-text) 17%,transparent)!important;
+      color:var(--cr-muted)!important;
+    }
+    .dashboard .room-filters button.active {
+      background:color-mix(in srgb,var(--cr-accent) 25%,var(--cr-surface))!important;
+      border-color:var(--cr-accent)!important;
+      color:var(--cr-text)!important;
+    }
+    .dashboard .room-filters button:focus-visible,
+    .dashboard .studio-tabs button:focus-visible,
+    .dashboard .ambient-room:focus-visible {outline:2px solid var(--cr-accent)!important;outline-offset:2px}
+    .dashboard .studio-tabs {background:color-mix(in srgb,var(--cr-surface) 87%,transparent)!important}
+    .dashboard .studio-tabs button {color:var(--cr-muted)!important}
+    .dashboard .studio-tabs button.active {
+      background:color-mix(in srgb,var(--cr-accent) 22%,var(--cr-surface))!important;
+      color:var(--cr-text)!important;
+    }
+    .dashboard .pref-modes button.active {
+      background:color-mix(in srgb,var(--cr-accent) 25%,var(--cr-surface))!important;
+      border-color:var(--cr-accent)!important;
+      color:var(--cr-text)!important;
+    }
+
+
+    /* V34: typography scales independently of component geometry. */
+    .dashboard .cr-font-setting{margin-top:9px;padding:12px 13px;border:1px solid color-mix(in srgb,var(--cr-accent) 23%,transparent);border-radius:15px;background:color-mix(in srgb,var(--cr-surface) 90%,var(--cr-accent));display:grid;gap:9px;min-width:0}
+    .dashboard .cr-font-label,.dashboard .cr-font-label>span{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .dashboard .cr-font-label strong{font-size:13px;color:var(--cr-text)}
+    .dashboard .cr-font-label ha-icon{--mdc-icon-size:18px;color:var(--cr-accent)}
+    .dashboard .cr-font-percent{font-size:12px;font-weight:700;color:var(--cr-muted)}
+    .dashboard .cr-font-choices{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+    .dashboard .cr-font-choices button{min-width:0;min-height:34px;border:1px solid color-mix(in srgb,var(--cr-text) 12%,transparent);border-radius:9px;background:color-mix(in srgb,var(--cr-surface) 85%,transparent);color:var(--cr-text);font:600 12px inherit;cursor:pointer;touch-action:manipulation}
+    .dashboard .cr-font-choices button.active{background:color-mix(in srgb,var(--cr-accent) 23%,var(--cr-surface));border-color:var(--cr-accent);color:var(--cr-text)}
+    .dashboard .cr-font-status{color:var(--cr-muted);font-size:10px}
+    .dashboard .page-heading{font-size:calc(15px * var(--cr-font-scale))!important}
+    .dashboard .nav-item,.dashboard .sidebar-nav button{font-size:calc(13px * var(--cr-font-scale))!important}
+    .dashboard .card-title{font-size:calc(14px * var(--cr-font-scale))!important}
+    .dashboard .card-subtitle{font-size:calc(10px * var(--cr-font-scale))!important;line-height:1.4!important}
+    .dashboard .light-row-name{font-size:calc(12px * var(--cr-font-scale))!important}
+    .dashboard .light-row-status{font-size:calc(10px * var(--cr-font-scale))!important}
+    .dashboard .studio-light-name{font-size:calc(14px * var(--cr-font-scale))!important}
+    .dashboard .studio-light-state-inline,.dashboard .studio-light-room{font-size:calc(11px * var(--cr-font-scale))!important}
+    .dashboard .studio-inline-value{font-size:calc(12px * var(--cr-font-scale))!important}
+    .dashboard .settings-option-copy strong{font-size:calc(14px * var(--cr-font-scale))!important}
+    .dashboard .settings-option-copy small{font-size:calc(11px * var(--cr-font-scale))!important}
+    .dashboard .settings-category h2{font-size:calc(13px * var(--cr-font-scale))!important}
+    .dashboard .cr-room-tile-body h2{font-size:calc(13px * var(--cr-font-scale))!important}
+    .dashboard .smart-bar .weather-condition,.dashboard .smart-bar .smart-segment small{font-size:calc(12px * var(--cr-font-scale))!important}
+    @media(max-width:650px){.dashboard .page-heading{font-size:calc(14px * var(--cr-font-scale))!important}.dashboard .card-title{font-size:calc(14px * var(--cr-font-scale))!important}}
+
 `;
 
   protected render() {
+    if (this.hass?.user?.id && !this.crRemoteReady && !this.crRemoteLoading && this.crRemoteUser !== this.hass.user.id) {
+      // First-time device: use neutral surface rather than painting the wrong theme.
+      return html`<div class="cr-first-load" style="min-height:100vh;display:grid;place-items:center;background:#191d20;color:#e8e8e8;font:600 14px system-ui">ControlRoom</div>`;
+    }
     return html`
       <div class=${`dashboard cr-theme-${this.crThemeStyle} ${this.crThemeIsLight() ? "cr-theme-light" : ""} ${""}`} style=${this.crThemeVars()}>
         ${this.renderSidebar()}
