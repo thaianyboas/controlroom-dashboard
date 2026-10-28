@@ -392,6 +392,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.crHAMode = "auto";
         this.crThemeSnapshot = "";
         this.crDefaultTheme = "purple";
+        this.crDefaultFeedback = "";
         this.crDefaultStyle = "glass";
         this.labelOptions = [];
         this.entityLabels = {};
@@ -706,6 +707,17 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             const standard = JSON.parse(localStorage.getItem("controlroom-theme-default-v1") || "{}");
             this.crDefaultTheme = standard.theme || saved.theme || "purple";
             this.crDefaultStyle = (["glass", "solid", "minimal"].includes(standard.style) ? standard.style : saved.style) || "glass";
+            const migrateTheme = (id) => {
+                const match = /^signature-(\d+)$/.exec(id);
+                if (!match)
+                    return id;
+                const available = this.crPalettes();
+                if (available.some(p => p.id === id))
+                    return id;
+                const generated = available.filter(p => p.id.startsWith("signature-"));
+                return generated.length ? generated[(Number(match[1]) - 1) % generated.length].id : "purple";
+            };
+            this.crDefaultTheme = migrateTheme(this.crDefaultTheme);
             this.crTheme = this.crDefaultTheme;
             this.crThemeStyle = this.crDefaultStyle;
             this.crThemeSource = "controlroom";
@@ -1337,25 +1349,33 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         }
     }
     renderPendant(on, brightness = 75) {
+        // The pendant keeps its signature silhouette. Its light and metallic details
+        // follow the selected ControlRoom palette instead of hardcoded purple.
+        const theme = this.crResolvedTheme();
+        const accent = theme.accent;
+        const glowStrength = Math.min(0.92, Math.max(0.28, brightness / 115));
+        const metal = theme.light ? "#373b43" : "#292b30";
+        const metalShadow = theme.light ? "#17191e" : "#101115";
+        const rim = theme.light ? "#626873" : "#555963";
         return b `<svg class="pendant" viewBox="0 0 150 180" aria-hidden="true">
       <defs>
         <radialGradient id="cr-ambient-glow">
-          <stop offset="0" stop-color="#ffcd82" stop-opacity=${on ? brightness / 115 : 0}/>
-          <stop offset="1" stop-color="#ffcd82" stop-opacity="0"/>
+          <stop offset="0" stop-color=${accent} stop-opacity=${on ? glowStrength : 0}/>
+          <stop offset="1" stop-color=${accent} stop-opacity="0"/>
         </radialGradient>
         <linearGradient id="cr-metal" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#62535c"/>
-          <stop offset=".5" stop-color="#1b1920"/>
-          <stop offset="1" stop-color="#49414b"/>
+          <stop offset="0" stop-color=${rim}/>
+          <stop offset=".5" stop-color=${metalShadow}/>
+          <stop offset="1" stop-color=${metal}/>
         </linearGradient>
       </defs>
       <ellipse cx="75" cy="127" rx="74" ry="52" fill="url(#cr-ambient-glow)"/>
-      <path d="M75 0V54" stroke="#716777" stroke-width="2"/>
-      <rect x="69" y="51" width="12" height="12" rx="3" fill="#302a32"/>
+      <path d="M75 0V54" stroke=${rim} stroke-width="2"/>
+      <rect x="69" y="51" width="12" height="12" rx="3" fill=${metalShadow}/>
       <path d="M69 60Q45 69 31 111Q75 127 119 111Q105 69 81 60Z"
-        fill="url(#cr-metal)" stroke="#6c5a68"/>
-      <ellipse cx="75" cy="111" rx="44" ry="8" fill=${on ? "#ffd18b" : "#403842"}/>
-      <ellipse cx="75" cy="112" rx="26" ry="4" fill=${on ? "#fff1ca" : "#514650"}/>
+        fill="url(#cr-metal)" stroke=${rim}/>
+      <ellipse cx="75" cy="111" rx="44" ry="8" fill=${on ? accent : metal}/>
+      <ellipse cx="75" cy="112" rx="26" ry="4" fill=${on ? theme.fg : rim} opacity=${on ? "0.95" : "0.35"}/>
     </svg>`;
     }
     renderLightsCard() {
@@ -1717,13 +1737,13 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
                 ];
                 // Each subsequent collection changes the background and surface, not just the accent.
                 // The permutation spreads signature families across every page instead of repeating triples.
-                const families = ["Signature", "Lacquer", "Velvet", "Brushed", "Satin", "Studio", "Dusk", "Dawn", "Heritage", "Modern", "Silk", "Noir", "Opaline", "Electric", "Atelier", "Residence", "Muse", "Gallery", "Couture"];
+                const families = ["Signature"];
                 const hex = (value) => [1, 3, 5].map(k => parseInt(value.slice(k, k + 2), 16));
                 const rgb = (values) => `#${values.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("")}`;
                 const mix = (a, b, t) => rgb(hex(a).map((v, k) => v * (1 - t) + hex(b)[k] * t));
                 // Each signature appears once per collection. Families change the whole visual
                 // composition, not just a tiny opacity shift. IDs stay stable for saved themes.
-                const generated = Array.from({ length: 1110 }, (_, i) => {
+                const generated = Array.from({ length: signatures.length }, (_, i) => {
                     const signature = signatures[i % signatures.length];
                     const family = Math.floor(i / signatures.length);
                     const [name, accent, bg, surface, text] = signature;
@@ -1902,15 +1922,21 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     setCRThemeAsDefault() {
         const data = this.crThemeData();
         try {
-            localStorage.setItem("controlroom-theme-default-v1", JSON.stringify(data));
-            localStorage.setItem("controlroom-theme-v1", JSON.stringify(data));
-            this.crDefaultTheme = this.crTheme;
-            this.crDefaultStyle = this.crThemeStyle;
-            this.crThemeSnapshot = JSON.stringify(data);
+            const payload = JSON.stringify(data);
+            localStorage.setItem("controlroom-theme-default-v1", payload);
+            localStorage.setItem("controlroom-theme-v1", payload);
+            if (localStorage.getItem("controlroom-theme-default-v1") !== payload)
+                throw new Error("Theme storage verification failed");
+            this.crDefaultTheme = data.theme;
+            this.crDefaultStyle = data.style;
+            this.crThemeSnapshot = payload;
+            this.crDefaultFeedback = "Standard gespeichert ✓";
             this.requestUpdate();
         }
         catch (error) {
+            this.crDefaultFeedback = "Speichern fehlgeschlagen – Browser-Speicher prüfen";
             console.warn("ControlRoom: default theme could not be saved", error);
+            this.requestUpdate();
         }
     }
     renderThemeSettings() {
@@ -1943,11 +1969,12 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const selected = all.find(p => p.id === this.crTheme) || all[0];
         return b `<div class="settings-center cr-theme-studio cr-theme-studio-v17">
       <div class="cr-atelier-heading"><button class="cr-atelier-back" type="button" title="Zurück zu Einstellungen" aria-label="Zurück zu Einstellungen" @click=${() => this.cancelCRTheme()}>${this.renderIcon("mdi:arrow-left")}</button><div><div class="cr-room-kicker">CONTROLROOM · DESIGN COLLECTION</div><h2>Theme Atelier</h2><p>${all.length} Farbwelten · Dein persönlicher Look.</p></div></div>
-      <div class="cr-theme-current"><span class="cr-theme-current-swatch" style=${`background:linear-gradient(135deg,${selected.bg},${selected.surface} 58%,${selected.accent})`}></span><span><small>AKTUELLE AUSWAHL</small><strong>${selected.name}</strong><small>${this.crThemeStyle === "glass" ? "Glass Premium" : this.crThemeStyle === "solid" ? "Modern Solid" : "Minimal"}</small></span>${this.renderIcon("mdi:check-decagram")}</div>
-      <section class="cr-style-gallery" aria-label="Visual Style"><div class="cr-style-gallery-head"><span class="cr-room-kicker">OBERFLÄCHEN · LIVE-VORSCHAU</span><h3>Visual Style</h3><p>Wähle die Oberfläche – die Vorschau übernimmt deine aktuelle Farbwelt.</p></div><div class="cr-theme-style-list">${[['glass', 'Glass Premium', 'Transparenz und weiche Glaseffekte'], ['solid', 'Modern Solid', 'Klare, elegante Oberflächen'], ['minimal', 'Minimal', 'Reduziert und kompakt']].map(([id, title, desc]) => b `<button type="button" class="cr-style-option ${id} ${this.crThemeStyle === id ? 'chosen' : ''}" aria-pressed=${this.crThemeStyle === id ? 'true' : 'false'} @click=${() => { this.crThemeStyle = id; this.requestUpdate(); }}><span class="cr-style-scene"><span class="cr-style-scene-header"><i></i><i></i><i></i></span><span class="cr-style-scene-body"><span class="cr-style-scene-main"><i></i><i></i><i></i></span><span class="cr-style-scene-side"><i></i><i></i></span></span></span><span class="cr-style-option-info"><strong>${title}</strong><small>${desc}</small></span>${this.crThemeStyle === id ? b `<span class="cr-style-selected">${this.renderIcon("mdi:check-circle")}</span>` : A}</button>`)}</div></section>
+      <div class="cr-theme-current"><span class="cr-theme-current-swatch" style=${`background:linear-gradient(135deg,${selected.bg},${selected.surface} 58%,${selected.accent})`}></span><span><small>AKTUELLE AUSWAHL</small><strong>${selected.name}</strong><small>${this.crThemeStyle === "glass" ? "Glass Premium" : this.crThemeStyle === "solid" ? "Modern Solid" : "Minimal"}</small></span><button type="button" class="cr-current-default-button" @click=${() => this.setCRThemeAsDefault()} aria-label="Dieses Design als Standard speichern">${this.renderIcon(this.crDefaultTheme === this.crTheme && this.crDefaultStyle === this.crThemeStyle ? "mdi:star" : "mdi:star-outline")}<span>${this.crDefaultTheme === this.crTheme && this.crDefaultStyle === this.crThemeStyle ? "Standard" : "Als Standard"}</span></button></div>
+      ${this.crDefaultFeedback ? b `<div class="cr-default-feedback" role="status">${this.crDefaultFeedback}</div>` : A}
+      <section class="cr-style-gallery" aria-label="Visual Style"><div class="cr-style-gallery-head"><span class="cr-room-kicker">OBERFLÄCHEN · LIVE-VORSCHAU</span><h3>Visual Style</h3><p>Wähle die Oberfläche – die Vorschau übernimmt deine aktuelle Farbwelt.</p></div><div class="cr-theme-style-list">${[['glass', 'Glass Premium', 'Transparenz und weiche Glaseffekte'], ['solid', 'Modern Solid', 'Klare, elegante Oberflächen'], ['minimal', 'Minimal', 'Reduziert und kompakt']].map(([id, title, desc]) => b `<button type="button" class="cr-style-option ${id} ${this.crThemeStyle === id ? 'chosen' : ''}" aria-pressed=${this.crThemeStyle === id ? 'true' : 'false'} @click=${() => { this.crThemeStyle = id; this.crDefaultFeedback = ""; this.requestUpdate(); }}><span class="cr-style-scene"><span class="cr-style-scene-header"><i></i><i></i><i></i></span><span class="cr-style-scene-body"><span class="cr-style-scene-main"><i></i><i></i><i></i></span><span class="cr-style-scene-side"><i></i><i></i></span></span></span><span class="cr-style-option-info"><strong>${title}</strong><small>${desc}</small></span>${this.crThemeStyle === id ? b `<span class="cr-style-selected">${this.renderIcon("mdi:check-circle")}</span>` : A}</button>`)}</div></section>
       <div class="cr-theme-tools"><label class="cr-theme-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Farbwelt suchen …" .value=${this.crThemeSearch} @input=${(e) => { this.crThemeSearch = e.target.value; this.crThemePage = 0; }} /></label><div class="cr-theme-filters">${[['all', 'Alle'], ['favorites', 'Klassiker'], ['dark', 'Dunkel'], ['light', 'Hell']].map(([id, name]) => b `<button class=${this.crThemeFilter === id ? 'active' : ''} @click=${() => { this.crThemeFilter = id; this.crThemePage = 0; }}>${name}</button>`)}</div></div>
       <div class="cr-theme-collection-heading"><h3>Farbwelten</h3><span>${filtered.length} Designs · Seite ${page + 1} / ${pages}</span></div>
-      <div class="cr-theme-grid">${visible.map(p => b `<button class="cr-theme-choice ${this.crTheme === p.id ? 'chosen' : ''}" @click=${() => { this.crTheme = p.id; this.crThemeSource = "controlroom"; this.requestUpdate(); }}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface};color:${p.text}`}></i><i style=${`background:${p.surface};color:${p.text}`}></i><em class="cr-theme-sample-text" style=${`color:${p.text}`}>Aa</em><b class="cr-theme-sample-action" style=${`background:${p.accent};border:1px solid ${p.text}55`}></b></span><strong>${p.name}</strong>${this.crTheme === p.id ? this.renderIcon("mdi:check-circle") : A}</button>`)}</div>
+      <div class="cr-theme-grid">${visible.map(p => b `<button class="cr-theme-choice ${this.crTheme === p.id ? 'chosen' : ''}" @click=${() => { this.crTheme = p.id; this.crThemeSource = "controlroom"; this.crDefaultFeedback = ""; this.requestUpdate(); }}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface};color:${p.text}`}></i><i style=${`background:${p.surface};color:${p.text}`}></i><em class="cr-theme-sample-text" style=${`color:${p.text}`}>Aa</em><b class="cr-theme-sample-action" style=${`background:${p.accent};border:1px solid ${p.text}55`}></b></span><strong>${p.name}</strong>${this.crTheme === p.id ? this.renderIcon("mdi:check-circle") : A}</button>`)}</div>
       ${filtered.length === 0 ? b `<p class="settings-note">Keine Farbwelt gefunden. Probiere einen anderen Suchbegriff.</p>` : A}
       ${pages > 1 ? b `<nav class="cr-theme-pagination" aria-label="Farbwelten Seiten"><button class="cr-page-nav cr-atelier-page-button" ?disabled=${page === 0} @click=${() => { this.crThemePage = Math.max(0, page - 1); }}><span>Zurück</span></button><div class="cr-page-center"><span class="cr-page-eyebrow">KOLLEKTION</span><label class="cr-page-select"><select aria-label="Seite auswählen" .value=${String(page)} @change=${(e) => { this.crThemePage = Number(e.target.value); }}>${Array.from({ length: pages }, (_, i) => b `<option value=${String(i)}>Seite ${i + 1} / ${pages}</option>`)}</select>${this.renderIcon("mdi:chevron-down")}</label><div class="cr-page-progress"><span style=${`width:${((page + 1) / pages) * 100}%`}></span></div></div><button class="cr-page-nav cr-atelier-page-button" ?disabled=${page >= pages - 1} @click=${() => { this.crThemePage = Math.min(pages - 1, page + 1); }}><span>Weiter</span></button></nav>` : A}
 
@@ -2663,7 +2690,7 @@ ControlRoomDashboard.styles = i$3 `
     .premium-lights { position: relative; min-height: 190px; overflow: hidden; }
     .premium-lights.has-light { border-color: rgba(215,165,104,.32); }
     .premium-lights-content { position:relative; z-index:1; display:flex; flex-direction:column; gap:12px; height:100%; }
-    .premium-lights .card-icon { color:#f1bf77; }
+    .premium-lights .card-icon { color:var(--cr-accent); }
     .pendant-corner { position:absolute; right:-6px; top:-20px; width:135px; pointer-events:none; }
     .pendant { display:block; width:100%; height:auto; }
     .premium-count { font-size:13px; color:var(--cr-muted); }
@@ -2749,7 +2776,7 @@ ControlRoomDashboard.styles = i$3 `
     .studio-light.active { box-shadow:inset 0 0 32px rgba(244,190,105,.045); }
     .studio-light-select { display:flex; flex-direction:column; align-items:flex-start; width:100%; height:100%; border:0; background:transparent; color:inherit; cursor:pointer; text-align:left; }
     .studio-light-icon { display:grid; place-items:center; width:30px; height:30px; border-radius:11px; color:var(--cr-muted); background:rgba(255,255,255,.06); }
-    .studio-light.active .studio-light-icon { color:#f2c887; background:rgba(232,179,96,.16); }
+    .studio-light.active .studio-light-icon { color:var(--cr-accent); background:color-mix(in srgb,var(--cr-accent) 16%,transparent); }
     .studio-light-state { position:absolute; right:14px; top:16px; color:var(--cr-muted); font-size:10px; }
     .studio-light.active .studio-light-state { color:#87d5ad; }
     .studio-light-name { margin-top:8px; font-size:14px; font-weight:650; }
@@ -3556,6 +3583,11 @@ ControlRoomDashboard.styles = i$3 `
       .dashboard .settings-center:has(.settings-save-bar){padding-bottom:175px!important}
     }
     @media(max-width:700px){.dashboard .cr-theme-studio-v17 .cr-theme-actions{left:0!important;width:100%!important;border-radius:16px 16px 0 0!important}.dashboard .cr-theme-action-caption{display:none}.dashboard .cr-theme-studio-v17 .cr-theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+    .dashboard .cr-current-default-button{margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:9px 12px;border:1px solid var(--cr-accent);border-radius:12px;background:var(--cr-surface);color:var(--cr-text);font-weight:700;cursor:pointer;position:relative;z-index:2}
+    .dashboard .cr-current-default-button *{color:inherit!important}
+    .dashboard .cr-default-feedback{margin:10px 0 0;padding:11px 14px;border:1px solid var(--cr-accent);border-radius:12px;background:var(--cr-surface);color:var(--cr-text);font-weight:700}
+    @media(max-width:550px){.dashboard .cr-current-default-button{padding:9px}.dashboard .cr-current-default-button span{display:none}}
     /* V22: Visual Style gallery, with responsive live previews */
     .dashboard .cr-theme-studio-v17{container-type:inline-size;min-width:0!important;width:100%!important;max-width:none!important;box-sizing:border-box!important}
     .dashboard .cr-style-gallery{margin:22px 0 26px;min-width:0}
@@ -3615,6 +3647,31 @@ ControlRoomDashboard.styles = i$3 `
     @container (max-width:900px){.dashboard .cr-style-gallery .cr-style-option{grid-template-columns:1fr!important}.dashboard .cr-style-gallery .cr-style-scene{height:78px!important}}
     @container (max-width:500px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:1fr!important}.dashboard .cr-style-gallery .cr-style-option{grid-template-columns:100px minmax(0,1fr)!important}.dashboard .cr-theme-pagination{grid-template-columns:auto minmax(0,1fr) auto!important;gap:5px!important;padding:10px 7px!important}.dashboard .cr-theme-pagination .cr-atelier-page-button{padding:9px 10px!important;font-size:12px!important}.dashboard .cr-theme-pagination .cr-page-center{min-width:0!important}.dashboard .cr-theme-pagination .cr-page-select select{max-width:125px!important;font-size:11px!important}}
     @media(max-width:520px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:1fr!important}.dashboard .cr-style-gallery .cr-style-option{grid-template-columns:95px minmax(0,1fr)!important}}
+
+
+    /* V27: consistent theme tokens and legible text throughout the dashboard. */
+    .dashboard .premium-lights .card-icon,
+    .dashboard .studio-light.active .studio-light-icon,
+    .dashboard .lights-card .card-icon,
+    .dashboard .studio-light-icon ha-icon {color:var(--cr-accent)!important}
+    .dashboard .premium-lights.has-light {border-color:color-mix(in srgb,var(--cr-accent) 38%,transparent)!important}
+    .dashboard .studio-light.active .studio-light-icon {background:color-mix(in srgb,var(--cr-accent) 17%,var(--cr-surface))!important}
+    .dashboard .welcome-title h1,.dashboard .welcome-title,
+    .dashboard .welcome-subtitle,.dashboard .welcome-eyebrow,
+    .dashboard .hero-content p,.dashboard .person-status,
+    .dashboard .person-chip small,.dashboard .brand-subtitle,
+    .dashboard .sidebar-subtitle,.dashboard .navigation-label,
+    .dashboard .premium-mood,.dashboard .studio-mood,
+    .dashboard .premium-lights .light-count,
+    .dashboard .premium-lights .card-subtitle {color:var(--cr-text)!important}
+    .dashboard .welcome-subtitle,.dashboard .person-status,
+    .dashboard .brand-subtitle,.dashboard .sidebar-subtitle,
+    .dashboard .premium-lights .light-count {opacity:.88!important}
+    .dashboard .premium-lights .light-count,
+    .dashboard .premium-lights .card-subtitle {text-shadow:none!important}
+    .dashboard .lights-card .premium-light-actions button,
+    .dashboard .lights-card .light-action,
+    .dashboard .studio-light.active {border-color:color-mix(in srgb,var(--cr-accent) 28%,transparent)}
 
 `;
 __decorate([
@@ -3713,6 +3770,9 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "crDefaultTheme", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "crDefaultFeedback", void 0);
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "crDefaultStyle", void 0);
