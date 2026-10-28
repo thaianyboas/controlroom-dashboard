@@ -2,127 +2,136 @@ import * as THREE from "three";
 
 type HAState = {state:string;attributes:Record<string,unknown>};
 type Hass = {states:Record<string,HAState>};
-type Room = {name:string;x:number;z:number;w:number;d:number;color:number};
+type Pt = [number,number];
+type Room = {name:string;points:Pt[];floor:number};
 
-/** ControlRoom 3D apartment prototype. Geometry is illustrative, NOT the real floor plan. */
+/** V56 architectural validation model. Coordinates are traced from the supplied floor plan,
+ *  not an architect's measured CAD survey. No furniture is added in this stage. */
 export class ControlRoomApartment3D extends HTMLElement {
-  private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(39,1,.1,120);
+  private scene=new THREE.Scene();
+  private camera=new THREE.PerspectiveCamera(37,1,.1,160);
   private renderer?:THREE.WebGLRenderer;
-  private stage = document.createElement('div');
-  private frame = 0;
+  private stage=document.createElement('div');
   private observer?:ResizeObserver;
-  private angle = .73;
-  private elevation = .94;
-  private radius = 17;
-  private dragging = false;
-  private pointer = {x:0,y:0};
-  private moved = false;
-  private raycaster = new THREE.Raycaster();
-  private mouse = new THREE.Vector2();
+  private frame=0;
+  private angle=.76;
+  private elevation=.62;
+  private radius=23;
+  private dragging=false;
+  private moved=false;
+  private pointer={x:0,y:0};
+  private raycaster=new THREE.Raycaster();
+  private mouse=new THREE.Vector2();
   private selectable:THREE.Object3D[]=[];
-  private lights = new Map<string,THREE.PointLight>();
-  private glow = new Map<string,THREE.Mesh>();
   private _hass?:Hass;
-  private roomMap:Room[] = [
-    {name:'Wohnzimmer',x:1.5,z:0.6,w:5.0,d:3.8,color:0x62564f},
-    {name:'Küche',x:-2.8,z:0.6,w:3.4,d:3.8,color:0x696159},
-    {name:'Schlafzimmer',x:1.5,z:-3.1,w:5.0,d:3.2,color:0x58515a},
-    {name:'Badezimmer',x:-2.8,z:-3.1,w:3.4,d:3.2,color:0x626c6e},
-    {name:'Flur',x:-.7,z:-1.2,w:1.3,d:1.1,color:0x756a5c}
-  ];
+  private materials:THREE.Material[]=[];
+  private geometries:THREE.BufferGeometry[]=[];
+  private center=new THREE.Vector3(0,0,0);
   static get observedAttributes(){return ['sofalicht','tischlicht'];}
-  set hass(value:Hass|undefined){this._hass=value;this.updateLights();}
+  set hass(v:Hass|undefined){this._hass=v;}
   get hass(){return this._hass;}
   constructor(){super();this.attachShadow({mode:'open'});}
+  private readonly rooms:Room[]=[
+    {name:'Schlafzimmer',points:[[127,68],[281,68],[281,259],[127,259]],floor:0xc5b49f},
+    {name:'Badezimmer',points:[[115,271],[211,271],[211,443],[115,443]],floor:0x4c625b},
+    {name:'Flur',points:[[212,261],[297,261],[297,299],[408,299],[408,379],[316,379],[316,443],[212,443]],floor:0xbba98f},
+    {name:'Wohnzimmer',points:[[115,445],[316,445],[316,649],[115,649]],floor:0xb68c63},
+    {name:'Küche',points:[[316,380],[430,380],[430,558],[316,558]],floor:0xb9a58d},
+    {name:'Balkon',points:[[316,558],[430,558],[430,650],[316,650]],floor:0x88837a}
+  ];
+  // The coordinate system below uses the user's marked plan as a tracing guide.
+  // X/Y in these lists are IMAGE coordinates, not world metres.
+  private readonly segments:{a:Pt;b:Pt;kind?:'window'|'door'|'opening';room?:string}[]=[
+    // Bedroom perimeter, including the narrow upper window and the door into the hall.
+    {a:[127,68],b:[151,68]},{a:[151,68],b:[213,68],kind:'window'},{a:[213,68],b:[281,68]},
+    {a:[127,68],b:[127,259]},{a:[281,68],b:[281,259]},
+    {a:[127,259],b:[238,259]},{a:[238,259],b:[269,259],kind:'door'},{a:[269,259],b:[281,259]},
+    // Bathroom, its internal access and the external left window.
+    {a:[115,271],b:[115,310]},{a:[115,310],b:[115,366],kind:'window'},{a:[115,366],b:[115,443]},
+    {a:[115,271],b:[211,271]},{a:[115,443],b:[211,443]},
+    {a:[211,271],b:[211,293]},{a:[211,293],b:[211,337],kind:'door'},{a:[211,337],b:[211,443]},
+    // Entry corridor, stepped exterior contour and front door (upper horizontal opening).
+    {a:[281,259],b:[297,259]},{a:[297,259],b:[297,299]},
+    {a:[297,299],b:[334,299]},{a:[334,299],b:[375,299],kind:'door'},{a:[375,299],b:[408,299]},
+    {a:[408,299],b:[408,379]},
+    {a:[211,379],b:[240,379]},{a:[240,379],b:[266,379],kind:'door'},{a:[266,379],b:[316,379]},
+    {a:[316,379],b:[354,379]},{a:[354,379],b:[381,379],kind:'door'},{a:[381,379],b:[408,379]},
+    // Living room, window along its bottom facade and open passage to kitchen.
+    {a:[115,443],b:[115,649]},
+    {a:[115,649],b:[139,649]},{a:[139,649],b:[299,649],kind:'window'},{a:[299,649],b:[316,649]},
+    {a:[316,443],b:[316,480]},{a:[316,480],b:[316,545],kind:'opening'},{a:[316,545],b:[316,649]},
+    // Kitchen and its right exterior wall.
+    {a:[316,379],b:[430,379]},{a:[430,379],b:[430,558]},
+    {a:[316,558],b:[348,558]},{a:[348,558],b:[402,558],kind:'window'},{a:[402,558],b:[430,558]},
+    // Balcony is an exterior space, with a low parapet and an open/door access from the living room.
+    {a:[316,558],b:[316,590],room:'Balkon'},{a:[316,590],b:[316,622],kind:'door',room:'Balkon'},{a:[316,622],b:[316,650],room:'Balkon'},
+    {a:[316,650],b:[430,650],room:'Balkon'},{a:[430,558],b:[430,650],room:'Balkon'}
+  ];
   connectedCallback(){
     if(this.renderer)return;
     this.shadowRoot!.innerHTML=`<style>
-      :host{display:block;position:relative;width:100%;height:clamp(340px,45vw,560px);overflow:hidden;border-radius:22px;background:radial-gradient(ellipse at 55% 35%,#34302e 0%,#1b1b20 62%,#121317 100%);color:#eee;font:500 12px system-ui}
+      :host{display:block;position:relative;width:100%;height:clamp(390px,52vw,650px);overflow:hidden;border-radius:22px;background:radial-gradient(ellipse at 52% 38%,#353332,#1b1c20 70%,#131519);color:#f2eee9;font:500 12px system-ui}
       .stage{position:absolute;inset:0;touch-action:none;cursor:grab}.stage:active{cursor:grabbing}
+      .label{position:absolute;left:18px;top:17px;pointer-events:none;z-index:2}.label b{display:block;font-size:15px}.label span{color:#c8c1b8}
+      .hint{position:absolute;left:18px;bottom:18px;color:#c8c1b8;opacity:.75;pointer-events:none;font-size:11px}
       .toolbar{position:absolute;right:15px;bottom:15px;display:flex;gap:7px;z-index:2}
       button{border:1px solid #ffffff33;border-radius:10px;background:#16181dcc;color:#eee;padding:9px 12px;font:inherit;cursor:pointer;backdrop-filter:blur(12px)}button:hover{background:#343741}
-      .label{position:absolute;left:18px;top:17px;pointer-events:none;z-index:2}.label b{display:block;font-size:15px}.label span{color:#d1c6b9}
-      .hint{position:absolute;left:18px;bottom:18px;color:#d1c6b9aa;pointer-events:none;font-size:11px}
-      @media(max-width:540px){.hint{display:none}.toolbar{right:9px;bottom:9px}}
-    </style><div class="stage"></div><div class="label"><b>Living Spaces · 3D</b><span>Apartment Concept · Prototype</span></div><div class="hint">Ziehen: drehen · Scrollen: zoomen · Raum anklicken: öffnen</div><div class="toolbar"><button data-zoom="in" title="Vergrößern">＋</button><button data-zoom="out" title="Verkleinern">－</button><button data-reset title="Ansicht zurücksetzen">↺</button></div>`;
+      @media(max-width:540px){.hint{display:none}.toolbar{right:9px;bottom:9px}.label{left:12px;top:12px}}
+    </style><div class="stage"></div><div class="label"><b>Living Spaces · Architektur</b><span>V56 · Grundrissprüfung · Ohne Möbel</span></div><div class="hint">Ziehen: drehen · Scrollen: zoomen · Raum anklicken: öffnen</div><div class="toolbar"><button data-zoom="in" title="Vergrößern">＋</button><button data-zoom="out" title="Verkleinern">－</button><button data-reset title="Ansicht zurücksetzen">↺</button></div>`;
     this.stage=this.shadowRoot!.querySelector('.stage')!;
     this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'default'});
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     this.renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure=1.55;
+    this.renderer.toneMappingExposure=1.35;
     this.renderer.shadowMap.enabled=true;
     this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;
     this.stage.append(this.renderer.domElement);
-    this.scene.add(new THREE.AmbientLight(0xffffff,1.65));
-    const sun=new THREE.DirectionalLight(0xffead1,2.3);sun.position.set(-5,11,7);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-12;sun.shadow.camera.right=12;sun.shadow.camera.top=12;sun.shadow.camera.bottom=-12;this.scene.add(sun);
-    const fill=new THREE.DirectionalLight(0xc3d4ff,1);fill.position.set(7,5,-8);this.scene.add(fill);
-    this.buildApartment();this.updateCamera();this.updateLights();
+    this.scene.add(new THREE.AmbientLight(0xffffff,1.75));
+    const sun=new THREE.DirectionalLight(0xffebd5,2.4);sun.position.set(-6,12,8);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-13;sun.shadow.camera.right=13;sun.shadow.camera.top=13;sun.shadow.camera.bottom=-13;this.scene.add(sun);
+    const fill=new THREE.DirectionalLight(0xc8d5ec,.9);fill.position.set(8,7,-7);this.scene.add(fill);
+    this.build();this.updateCamera();
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this);
-    this.stage.addEventListener('pointerdown',this.down);
-    this.stage.addEventListener('pointermove',this.move);
-    this.stage.addEventListener('pointerup',this.up);
-    this.stage.addEventListener('pointercancel',this.up);
-    this.stage.addEventListener('wheel',this.wheel,{passive:false});
+    this.stage.addEventListener('pointerdown',this.down);this.stage.addEventListener('pointermove',this.move);this.stage.addEventListener('pointerup',this.up);this.stage.addEventListener('pointercancel',this.up);this.stage.addEventListener('wheel',this.wheel,{passive:false});
     this.shadowRoot!.querySelector('[data-zoom="in"]')!.addEventListener('click',()=>this.zoom(-1));
     this.shadowRoot!.querySelector('[data-zoom="out"]')!.addEventListener('click',()=>this.zoom(1));
-    this.shadowRoot!.querySelector('[data-reset]')!.addEventListener('click',()=>{this.angle=.73;this.elevation=.94;this.radius=17;this.updateCamera()});
+    this.shadowRoot!.querySelector('[data-reset]')!.addEventListener('click',()=>{this.angle=.76;this.elevation=.62;this.radius=23;this.updateCamera()});
     this.loop();
   }
-  disconnectedCallback(){cancelAnimationFrame(this.frame);this.observer?.disconnect();this.stage.removeEventListener('pointerdown',this.down);this.stage.removeEventListener('pointermove',this.move);this.stage.removeEventListener('pointerup',this.up);this.stage.removeEventListener('pointercancel',this.up);this.stage.removeEventListener('wheel',this.wheel);this.scene.traverse(obj=>{const m=obj as THREE.Mesh;if(m.geometry)m.geometry.dispose();if(m.material){const mats=Array.isArray(m.material)?m.material:[m.material];mats.forEach(x=>x.dispose());}});this.renderer?.dispose();this.renderer?.domElement.remove();this.renderer=undefined;}
-  private material(hex:number,roughness=.82){return new THREE.MeshStandardMaterial({color:hex,roughness,metalness:.06});}
-  private box(x:number,y:number,z:number,w:number,h:number,d:number,color:number,room?:string){const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),this.material(color));mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;if(room){mesh.userData.room=room;this.selectable.push(mesh);}this.scene.add(mesh);return mesh;}
-  private buildApartment(){
-    this.box(-.55,-.24,-1.2,9.8,.34,8.5,0x39383b);
-    this.box(-.55,-.39,-1.2,10.0,.16,8.7,0x1d1d22);
-    for(const r of this.roomMap){
-      this.box(r.x,-.055,r.z,r.w,.11,r.d,r.color,r.name);
-      const wall=0xaaa49c;
-      // Low cutaway walls, allowing inspection from any angle.
-      this.box(r.x-r.w/2,.43,r.z,.105,.95,r.d,wall,r.name);
-      this.box(r.x,.43,r.z-r.d/2,r.w,.95,.105,wall,r.name);
-      this.box(r.x+r.w/2,.19,r.z,.09,.47,r.d,0x847e78,r.name);
-      const lamp=new THREE.PointLight(0xffb96d,0,4.2,2);lamp.position.set(r.x,1.45,r.z);this.scene.add(lamp);this.lights.set(r.name,lamp);
-      const shade=new THREE.Mesh(new THREE.SphereGeometry(.13,12,8),this.material(0x272830));shade.position.set(r.x,1.4,r.z);this.scene.add(shade);
+  disconnectedCallback(){cancelAnimationFrame(this.frame);this.observer?.disconnect();this.stage.removeEventListener('pointerdown',this.down);this.stage.removeEventListener('pointermove',this.move);this.stage.removeEventListener('pointerup',this.up);this.stage.removeEventListener('pointercancel',this.up);this.stage.removeEventListener('wheel',this.wheel);this.geometries.forEach(g=>g.dispose());this.materials.forEach(m=>m.dispose());this.renderer?.dispose();this.renderer?.domElement.remove();this.renderer=undefined;this.selectable=[];this.scene.clear();}
+  private mat(color:number,metalness=0){const m=new THREE.MeshStandardMaterial({color,roughness:.86,metalness});this.materials.push(m);return m;}
+  private world(p:Pt){return new THREE.Vector2((p[0]-272)*.024,(p[1]-354)*.024);}
+  private cuboid(x:number,y:number,z:number,w:number,h:number,d:number,color:number,room?:string){const g=new THREE.BoxGeometry(w,h,d);this.geometries.push(g);const mesh=new THREE.Mesh(g,this.mat(color));mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;if(room){mesh.userData.room=room;this.selectable.push(mesh);}this.scene.add(mesh);return mesh;}
+  private line(a:Pt,b:Pt,height:number,color:number,room?:string){const p=this.world(a),q=this.world(b);const length=p.distanceTo(q);if(length<.005)return;const mesh=this.cuboid((p.x+q.x)/2,height/2,(p.y+q.y)/2,length,height,.085,color,room);mesh.rotation.y=-Math.atan2(q.y-p.y,q.x-p.x);}
+  private floor(room:Room){const shape=new THREE.Shape();room.points.forEach((p,i)=>{const q=this.world(p);if(i===0)shape.moveTo(q.x,-q.y);else shape.lineTo(q.x,-q.y);});shape.closePath();const g=new THREE.ShapeGeometry(shape);this.geometries.push(g);const mesh=new THREE.Mesh(g,this.mat(room.floor));mesh.rotation.x=-Math.PI/2;mesh.position.y=.055;mesh.receiveShadow=true;mesh.userData.room=room.name;this.selectable.push(mesh);this.scene.add(mesh);}
+  private build(){
+    this.cuboid(0,-.20,0,8.5,.35,15.5,0x302e30);
+    this.cuboid(0,-.38,0,8.65,.14,15.65,0x19191e);
+    for(const room of this.rooms)this.floor(room);
+    for(const seg of this.segments){
+      const low=seg.room==='Balkon';
+      if(seg.kind==='opening')continue;
+      if(seg.kind==='door'){
+        // Door opening: threshold only, no solid wall crossing the doorway.
+        this.line(seg.a,seg.b,.045,0x8b7d6e);
+      }else if(seg.kind==='window'){
+        // A visible window sill and transparent glass panel, not a solid wall.
+        this.line(seg.a,seg.b,.27,0x918b83);
+        const a=this.world(seg.a),b=this.world(seg.b),length=a.distanceTo(b);
+        const geo=new THREE.BoxGeometry(length,.34,.025);this.geometries.push(geo);
+        const glass=new THREE.Mesh(geo,new THREE.MeshPhysicalMaterial({color:0xbad4d9,transparent:true,opacity:.27,roughness:.18,metalness:0,depthWrite:false,side:THREE.DoubleSide}));
+        this.materials.push(glass.material);glass.position.set((a.x+b.x)/2,.45,(a.y+b.y)/2);glass.rotation.y=-Math.atan2(b.y-a.y,b.x-a.x);this.scene.add(glass);
+      }else this.line(seg.a,seg.b,low?.32:.83,low?0x9b938b:0xc7bdb1,seg.room);
     }
-    // Wohnzimmer: graphite sofa, coffee table, TV console and wall-mounted TV.
-    this.box(1.0,.31,1.8,2.4,.5,.85,0x2a2b32,'Wohnzimmer');
-    this.box(1.0,.65,2.12,2.4,.55,.18,0x34343b,'Wohnzimmer');
-    this.box(1.0,.24,.45,1.2,.15,.65,0x6b4c39,'Wohnzimmer');
-    this.box(2.9,.24,-.68,1.45,.38,.32,0x49372f,'Wohnzimmer');
-    this.box(2.9,.77,-.83,1.35,.77,.09,0x181b23,'Wohnzimmer');
-    const sofaGlow=new THREE.Mesh(new THREE.PlaneGeometry(2.8,.5),new THREE.MeshBasicMaterial({color:0xffba6a,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}));sofaGlow.position.set(1,.43,2.27);this.scene.add(sofaGlow);this.glow.set('sofa',sofaGlow);
-    // Kitchen: minimalist counter, island, hob.
-    this.box(-3.2,.4,-.52,2.6,.8,.62,0xd6cab7,'Küche');
-    this.box(-2.5,.41,1.0,1.5,.82,.82,0x86786a,'Küche');
-    this.box(-2.5,.85,1,1.55,.07,.9,0xe0d6c7,'Küche');
-    for(let i=0;i<4;i++){const ring=new THREE.Mesh(new THREE.TorusGeometry(.11,.014,6,24),this.material(0x25272c));ring.rotation.x=-Math.PI/2;ring.position.set(-2.9+(i%2)*.35,.89,.82+Math.floor(i/2)*.35);this.scene.add(ring);}
-    // Bedroom: bed, pillows and side tables.
-    this.box(1.4,.23,-3.25,2.1,.4,1.65,0x4a3e3a,'Schlafzimmer');
-    this.box(1.4,.48,-3.25,1.98,.15,1.55,0xccc0b1,'Schlafzimmer');
-    this.box(.85,.58,-3.8,.62,.12,.35,0xe9dfcf,'Schlafzimmer');this.box(1.9,.58,-3.8,.62,.12,.35,0xe9dfcf,'Schlafzimmer');
-    // Bathroom: freestanding bathtub.
-    this.box(-2.85,.36,-3.25,1.8,.65,.87,0xd2d4d1,'Badezimmer');
-    this.box(-2.85,.69,-3.25,1.52,.06,.61,0x8ca5aa,'Badezimmer');
-    // Plants and subtle architectural details.
-    for(const [x,z] of [[3.35,1.7],[-4.0,-.4]]){this.box(x,.17,z,.36,.34,.36,0x554338);const crown=new THREE.Mesh(new THREE.SphereGeometry(.34,10,8),this.material(0x56654c));crown.position.set(x,.66,z);crown.castShadow=true;this.scene.add(crown);}
   }
-  private updateLights(){if(!this.lights.size)return;const states=this._hass?.states||{};const any=(names:string[])=>Object.entries(states).some(([id,s])=>id.startsWith('light.')&&names.some(n=>id.toLowerCase().includes(n))&&s.state==='on');
-    const sofa=this.getAttribute('sofalicht');const table=this.getAttribute('tischlicht');
-    const onSofa=sofa?states[sofa]?.state==='on':any(['sofalicht','sofa_licht']);
-    const onTable=table?states[table]?.state==='on':any(['tischlicht','tisch_licht']);
-    for(const [name,light] of this.lights){const on=name==='Wohnzimmer'?(onSofa||onTable):false;light.intensity=on?2.7:0;}
-    const glow=this.glow.get('sofa');if(glow){(glow.material as THREE.MeshBasicMaterial).opacity=onSofa?.36:0;}
-  }
-  private updateCamera(){const t=new THREE.Vector3(-.4,0,-1.1);this.camera.position.set(t.x+this.radius*Math.sin(this.elevation)*Math.cos(this.angle),this.radius*Math.cos(this.elevation),t.z+this.radius*Math.sin(this.elevation)*Math.sin(this.angle));this.camera.lookAt(t);}
+  private updateCamera(){const t=this.center;this.camera.position.set(t.x+this.radius*Math.sin(this.elevation)*Math.cos(this.angle),this.radius*Math.cos(this.elevation),t.z+this.radius*Math.sin(this.elevation)*Math.sin(this.angle));this.camera.lookAt(t);}
   private resize(){if(!this.renderer)return;const w=this.stage.clientWidth,h=this.stage.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();}
   private loop=()=>{if(!this.renderer)return;this.frame=requestAnimationFrame(this.loop);this.renderer.render(this.scene,this.camera);};
   private down=(e:PointerEvent)=>{this.dragging=true;this.moved=false;this.pointer={x:e.clientX,y:e.clientY};this.stage.setPointerCapture(e.pointerId);};
-  private move=(e:PointerEvent)=>{if(!this.dragging)return;const dx=e.clientX-this.pointer.x,dy=e.clientY-this.pointer.y;if(Math.abs(dx)+Math.abs(dy)>2)this.moved=true;this.angle-=dx*.007;this.elevation=THREE.MathUtils.clamp(this.elevation+dy*.006,.28,1.48);this.pointer={x:e.clientX,y:e.clientY};this.updateCamera();};
+  private move=(e:PointerEvent)=>{if(!this.dragging)return;const dx=e.clientX-this.pointer.x,dy=e.clientY-this.pointer.y;if(Math.abs(dx)+Math.abs(dy)>2)this.moved=true;this.angle-=dx*.007;this.elevation=THREE.MathUtils.clamp(this.elevation+dy*.006,.24,1.49);this.pointer={x:e.clientX,y:e.clientY};this.updateCamera();};
   private up=(e:PointerEvent)=>{if(!this.dragging)return;this.dragging=false;if(!this.moved)this.pick(e);};
-  private pick(e:PointerEvent){if(!this.renderer)return;const r=this.renderer.domElement.getBoundingClientRect();this.mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);this.raycaster.setFromCamera(this.mouse,this.camera);const hits=this.raycaster.intersectObjects(this.selectable,false);const name=hits[0]?.object.userData.room;if(name)this.dispatchEvent(new CustomEvent('room-selected',{detail:{room:name},bubbles:true,composed:true}));}
-  private wheel=(e:WheelEvent)=>{e.preventDefault();this.radius=THREE.MathUtils.clamp(this.radius+e.deltaY*.012,7,28);this.updateCamera();};
-  private zoom(direction:number){this.radius=THREE.MathUtils.clamp(this.radius+direction*1.5,7,28);this.updateCamera();}
+  private pick(e:PointerEvent){if(!this.renderer)return;const r=this.renderer.domElement.getBoundingClientRect();this.mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);this.raycaster.setFromCamera(this.mouse,this.camera);const hit=this.raycaster.intersectObjects(this.selectable,false)[0];const name=hit?.object.userData.room;if(name)this.dispatchEvent(new CustomEvent('room-selected',{detail:{room:name},bubbles:true,composed:true}));}
+  private wheel=(e:WheelEvent)=>{e.preventDefault();this.radius=THREE.MathUtils.clamp(this.radius+e.deltaY*.013,9,38);this.updateCamera();};
+  private zoom(direction:number){this.radius=THREE.MathUtils.clamp(this.radius+direction*2,9,38);this.updateCamera();}
 }
 if(!customElements.get('controlroom-apartment-3d'))customElements.define('controlroom-apartment-3d',ControlRoomApartment3D);
