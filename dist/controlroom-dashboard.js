@@ -1378,12 +1378,16 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             <span class="premium-status-dot ${on ? "lit" : ""}"></span>
             <span>${countLabel}</span>
           </div>
-          <div class="premium-actions">
+          <div class="premium-actions premium-actions-three">
+            <button type="button" class="glass-action" ?disabled=${!available || on === available || !this.hass?.callService}
+              @click=${() => this.setAllLights(true, lights)}>
+              ${this.renderIcon("mdi:weather-sunny")} ${this.t("allOn")}
+            </button>
             <button type="button" class="glass-action" ?disabled=${!on || !this.hass?.callService}
               @click=${() => this.setAllLights(false, lights)}>
-              ${this.renderIcon("mdi:power")} ${this.t("allOff")}
+              ${this.renderIcon("mdi:weather-night")} ${this.t("allOff")}
             </button>
-            <button type="button" class="glass-action" @click=${() => this.navigate("lights")}>
+            <button type="button" class="glass-action premium-light-link" @click=${() => this.navigate("lights")}>
               ${this.t("lighting")} ${this.renderIcon("mdi:arrow-right")}
             </button>
           </div>
@@ -1711,16 +1715,23 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const bgRatio = bgLum === null || textLum === null ? 99 : (Math.max(bgLum, textLum) + 0.05) / (Math.min(bgLum, textLum) + 0.05);
         const bgFg = bgRatio < 4.5 ? ((bgLum ?? (light ? 1 : 0)) > 0.18 ? "#17202b" : "#f7f8fc") : fg;
         const onAccent = (luminance(accent) ?? 0.5) > 0.18 ? "#10151d" : "#ffffff";
+        // HACS mode: neutral black/white controls, independent of the theme accent.
+        const neutral = (value, defaultLight) => ((luminance(value) ?? (defaultLight ? 1 : 0)) > 0.179 ? "#111111" : "#ffffff");
+        const neutralBg = neutral(bg, light);
+        const neutralSurface = neutral(surface, light);
+        const neutralButton = neutralBg === "#111111" ? "#111111" : "#ffffff";
+        const neutralButtonText = neutralButton === "#111111" ? "#ffffff" : "#111111";
         const mutedLum = luminance(muted);
         const mutedRatio = surfaceLum === null || mutedLum === null ? 99 : (Math.max(surfaceLum, mutedLum) + 0.05) / (Math.min(surfaceLum, mutedLum) + 0.05);
         const safeMuted = mutedRatio < 3 ? ((surfaceLum ?? (light ? 1 : 0)) > 0.18 ? "#485363" : "#bfc8d4") : muted;
-        return { accent, bg, surface, fg: safeFg, bgFg, muted: safeMuted, onAccent, light, ha, resolve, pick };
+        return { accent, bg, surface, fg: safeFg, bgFg, muted: safeMuted, onAccent, light, ha, resolve, pick, neutralBg, neutralSurface, neutralButton, neutralButtonText };
     }
     crThemeVars() {
         const t = this.crResolvedTheme();
         const radius = this.crThemeStyle === "minimal" ? "9px" : this.crThemeStyle === "solid" ? "15px" : "22px";
         const css = {
             "--cr-accent": t.accent, "--cr-bg": t.bg, "--cr-surface": t.surface, "--cr-text": t.fg, "--cr-bg-text": t.bgFg, "--cr-on-accent": t.onAccent, "--cr-muted": t.muted,
+            "--cr-neutral-bg": t.neutralBg, "--cr-neutral-surface": t.neutralSurface, "--cr-neutral-button": t.neutralButton, "--cr-neutral-button-text": t.neutralButtonText,
             "--cr-is-light": t.light ? "1" : "0", "--cr-radius": radius, "--cr-blur": this.crThemeStyle === "glass" ? "blur(22px)" : "none",
             "--primary-color": t.accent, "--accent-color": t.accent, "--primary-text-color": t.fg, "--secondary-text-color": t.muted,
             "--primary-background-color": t.bg, "--card-background-color": t.surface, "--ha-card-background": t.surface,
@@ -1978,7 +1989,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
     render() {
         return b `
-      <div class=${`dashboard cr-theme-${this.crThemeStyle} ${this.crThemeIsLight() ? "cr-theme-light" : ""}`} style=${this.crThemeVars()}>
+      <div class=${`dashboard cr-theme-${this.crThemeStyle} ${this.crThemeIsLight() ? "cr-theme-light" : ""} ${this.crThemeSource === "ha" ? "cr-hacs-neutral" : ""}`} style=${this.crThemeVars()}>
         ${this.renderSidebar()}
 
         <main class="main">
@@ -2523,6 +2534,9 @@ ControlRoomDashboard.styles = i$3 `
     .premium-status-dot.lit { background:#f3c384;box-shadow:0 0 10px rgba(245,193,118,.55); }
     .premium-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:auto; }
     .glass-action { display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 11px; color:var(--cr-text); background:color-mix(in srgb,var(--cr-accent) 25%,transparent); border:1px solid color-mix(in srgb,var(--cr-accent) 20%,transparent); border-radius:999px; cursor:pointer; font-size:11px; }
+    .premium-actions-three { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+    .premium-actions-three .glass-action { min-width:0; padding:9px 7px; white-space:nowrap; }
+    .premium-actions-three .premium-light-link { grid-column:1/-1; }
     .glass-action:disabled { opacity:.45; cursor:not-allowed; }
     .glass-action ha-icon { --mdc-icon-size:16px; }
     .premium-rooms { display:flex; flex-wrap:wrap; gap:5px; }
@@ -3141,6 +3155,39 @@ ControlRoomDashboard.styles = i$3 `
     .dashboard .cr-theme-studio .cr-theme-choice .cr-theme-preview span,.dashboard .cr-theme-studio .cr-theme-choice .cr-theme-preview i{color:inherit!important}
     .dashboard .cr-theme-actions button:first-child{background:var(--cr-surface)!important;color:var(--cr-text)!important}
     .dashboard .cr-theme-studio .cr-theme-choice.chosen,.dashboard .cr-theme-studio .cr-theme-style-list button.chosen{border-color:var(--cr-accent)!important}
+
+
+    /* V13: HACS-only neutral interaction layer. Built-in palettes are unchanged. */
+    .dashboard.cr-hacs-neutral {--cr-accent:var(--cr-neutral-bg);--cr-on-accent:var(--cr-neutral-button-text);}
+    .dashboard.cr-hacs-neutral .sidebar ha-icon,
+    .dashboard.cr-hacs-neutral .main ha-icon,
+    .dashboard.cr-hacs-neutral .sidebar svg,
+    .dashboard.cr-hacs-neutral .main svg,
+    .dashboard.cr-hacs-neutral .nav-item.active,
+    .dashboard.cr-hacs-neutral .nav-item.active ha-icon,
+    .dashboard.cr-hacs-neutral .cr-theme-style-list button.chosen ha-icon,
+    .dashboard.cr-hacs-neutral .cr-theme-choice.chosen ha-icon {color:var(--cr-neutral-bg)!important;}
+    .dashboard.cr-hacs-neutral .cr-theme-actions button:last-child,
+    .dashboard.cr-hacs-neutral .settings-save,
+    .dashboard.cr-hacs-neutral button.primary,
+    .dashboard.cr-hacs-neutral .cr-room-actions button,
+    .dashboard.cr-hacs-neutral .cr-room-image-form button,
+    .dashboard.cr-hacs-neutral .cr-room-visual-actions button:last-child {background:var(--cr-neutral-button)!important;color:var(--cr-neutral-button-text)!important;border-color:var(--cr-neutral-button)!important;}
+    .dashboard.cr-hacs-neutral .cr-theme-actions button:last-child *,
+    .dashboard.cr-hacs-neutral .settings-save *,
+    .dashboard.cr-hacs-neutral button.primary * {color:var(--cr-neutral-button-text)!important;}
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-choice.chosen,
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-style-list button.chosen,
+    .dashboard.cr-hacs-neutral .nav-item.active {border-color:var(--cr-neutral-bg)!important;}
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-choice,
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-style-list button {color:var(--cr-bg-text)!important;}
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-choice strong,
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-style-list strong,
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-style-list small {color:var(--cr-bg-text)!important;}
+    .dashboard.cr-hacs-neutral .cr-theme-studio select,
+    .dashboard.cr-hacs-neutral .cr-theme-studio input {color:var(--cr-text)!important;background:var(--cr-surface)!important;}
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-preview,
+    .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-preview * {color:inherit!important;}
 
 `;
 __decorate([
