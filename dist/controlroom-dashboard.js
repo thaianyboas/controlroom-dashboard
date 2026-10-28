@@ -1064,14 +1064,14 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             { id: "welcome", title: "Begrüßung & Personen", description: "Anrede, Profilbilder und Standorte", icon: "mdi:account-heart-outline", group: "Startseite" },
             { id: "smartbar", title: "Smart Glass Bar", description: "Wetter, Uhr & Datum und Müllabfuhr", icon: "mdi:weather-partly-cloudy", group: "Startseite" },
             { id: "rooms", title: "Räume", description: "Bildstil, Raumfotos und automatische Darstellung", icon: "mdi:home-edit-outline", group: "Darstellung" },
-            { id: "themes", title: "Themes", description: "Farben, Designstile und Home Assistant / HACS", icon: "mdi:palette-outline", group: "Darstellung" },
+            { id: "themes", title: "Themes", description: "Exklusive ControlRoom-Farbwelten und Designstile", icon: "mdi:palette-outline", group: "Darstellung" },
             { id: "devices", title: "Geräte & Bereiche", description: "Bereiche und Entitäten · in Vorbereitung", icon: "mdi:devices", group: "Geräte & Bereiche" },
             { id: "system", title: "System", description: "Informationen und Verwaltung · in Vorbereitung", icon: "mdi:cog-outline", group: "System" }
         ];
         const matches = categories.filter(c => `${c.title} ${c.description} ${c.group}`.toLocaleLowerCase().includes(this.settingsSearch.toLocaleLowerCase().trim()));
         if (section === "overview")
             return b `<div class="settings-center">
-      <div class="settings-intro"><div class="eyebrow">CONTROLROOM</div><h1>Einstellungen</h1><p>Gestalte dein Zuhause, ganz nach deinen Wünschen.</p></div>
+      <div class="settings-intro"><h1>Einstellungen</h1><p>Gestalte dein Zuhause, ganz nach deinen Wünschen.</p></div>
       <label class="settings-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Einstellungen durchsuchen…" .value=${this.settingsSearch} @input=${(e) => { this.settingsSearch = e.target.value; }} aria-label="Einstellungen durchsuchen" /></label>
       ${matches.length ? [...new Set(matches.map(c => c.group))].map(group => b `<section class="settings-category"><h2>${group}</h2><div class="settings-options">${matches.filter(c => c.group === group).map(c => b `<button class="settings-option" @click=${() => { if (c.id === "welcome" || c.id === "smartbar")
                 this.beginSettingsEdit(c.id);
@@ -1087,14 +1087,14 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         if (section === "themes")
             return this.renderThemeSettings();
         if (section === "rooms")
-            return b `<div class="settings-center"><button class="settings-back" @click=${() => { this.cancelRoomVisualSettings(); this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>${this.renderRoomStyleEditor(Object.entries(this.areaNames).sort((a, b) => a[1].localeCompare(b[1])))}</div>`;
+            return b `<div class="settings-center"><button class="settings-back" @click=${() => { this.cancelRoomVisualSettings(); this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Zurück</button>${this.renderRoomStyleEditor(Object.entries(this.areaNames).sort((a, b) => a[1].localeCompare(b[1])))}</div>`;
         if (section === "appearance" || section === "devices" || section === "system")
-            return b `<div class="settings-center"><button class="settings-back" @click=${() => { this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button><section class="welcome-settings"><div class="eyebrow">CONTROLROOM</div><h2>${categories.find(c => c.id === section)?.title}</h2><p>Dieser Bereich wird in einer späteren Etappe eingerichtet. Bestehende Einstellungen bleiben unverändert.</p></section></div>`;
+            return b `<div class="settings-center"><button class="settings-back" @click=${() => { this.settingsSection = "overview"; }}>${this.renderIcon("mdi:arrow-left")} Zurück</button><section class="welcome-settings"><div class="eyebrow">CONTROLROOM</div><h2>${categories.find(c => c.id === section)?.title}</h2><p>Dieser Bereich wird in einer späteren Etappe eingerichtet. Bestehende Einstellungen bleiben unverändert.</p></section></div>`;
         const candidates = this.getWasteCandidates().filter(e => this.wasteSource === "auto" || e.entity_id.startsWith(`${this.wasteSource}.`));
         const wasteInfo = this.getWasteInfo();
-        return b `<div class="settings-stack"><button class="settings-back" @click=${() => { this.cancelSettingsEdit(); }}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>
+        return b `<div class="settings-stack"><button class="settings-back" @click=${() => { this.cancelSettingsEdit(); }}>${this.renderIcon("mdi:arrow-left")} Zurück</button>
       ${section === "welcome" ? b `<section class="welcome-settings">
-        <div class="eyebrow">Startseite</div><h2>Begrüßung & Personen</h2>
+        <h2>Begrüßung & Personen</h2>
         <p>Personalisierung dieses Browsers / Displays</p>
         <label class="welcome-setting-row"><span>Begrüßungsmodus</span>
           <select .value=${this.welcomeMode} @change=${(e) => { this.welcomeMode = e.target.value; this.markSettingsDirty(); }}>
@@ -1114,7 +1114,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
           <input type="text" .value=${this.welcomeSubtitle || this.t("subtitle")} @change=${(e) => { this.welcomeSubtitle = e.target.value; this.markSettingsDirty(); }} /></label>
       </section>` : A}
       ${section === "smartbar" ? b `<section class="welcome-settings">
-        <div class="eyebrow">Startseite</div><h2>Smart Glass Bar</h2>
+        <h2>Smart Glass Bar</h2>
         <p>Module und Datenquellen · auf diesem Display gespeichert</p>
         ${[["weather", "Wetter", "smartShowWeather", "mdi:weather-partly-cloudy"], ["clock", "Uhr & Datum", "smartShowClock", "mdi:clock-outline"], ["waste", "Müllabfuhr", "smartShowWaste", "mdi:trash-can-outline"]].map(([id, label, showKey, icon]) => b `
           <div class="smart-settings-module">
@@ -1796,7 +1796,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             return val.replace(/var\(\s*--([\w-]+)\s*(?:,\s*([^()]*))?\)/g, (_m, k, fallback) => resolve(k, depth + 1) || fallback?.trim() || "");
         };
         const ha = false;
-        const fallback = { accent: palette.accent, bg: palette.bg, surface: palette.surface, text: palette.text, muted: this.crIsLightColor(palette.bg) ? "#746c80" : "#b9b2c6" };
+        const fallback = ha ? (dark ? { accent: "#75a7dc", bg: "#141a22", surface: "#252d37", text: "#f4f6fa", muted: "#b7c0cc" } : { accent: "#386da6", bg: "#f5f6f9", surface: "#ffffff", text: "#202733", muted: "#586474" }) : { accent: palette.accent, bg: palette.bg, surface: palette.surface, text: palette.text, muted: palette.text };
         const pick = (defaultValue, ...keys) => {
             return defaultValue;
         };
@@ -1804,7 +1804,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const bg = pick(fallback.bg, "lovelace-background", "primary-background-color");
         const surface = pick(fallback.surface, "ha-card-background", "card-background-color", "secondary-background-color");
         const fg = pick(fallback.text, "primary-text-color");
-        const muted = pick(fallback.muted, "secondary-text-color", "disabled-text-color");
+        const muted = ha ? pick(fallback.muted, "secondary-text-color", "disabled-text-color") : fallback.muted;
         const light = this.crIsLightColor(bg) || (ha && !/^#[0-9a-f]{3,8}$/i.test(bg) && !dark);
         // Some HA themes declare light text over a light background (or the inverse)
         // because their text variables are intended for a different surface.
@@ -1844,14 +1844,14 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const neutralButtonText = neutralButton === "#111111" ? "#ffffff" : "#111111";
         const mutedLum = luminance(muted);
         const mutedRatio = surfaceLum === null || mutedLum === null ? 99 : (Math.max(surfaceLum, mutedLum) + 0.05) / (Math.min(surfaceLum, mutedLum) + 0.05);
-        const safeMuted = mutedRatio < 3 ? ((surfaceLum ?? (light ? 1 : 0)) > 0.18 ? "#485363" : "#bfc8d4") : muted;
+        const safeMuted = ha ? (mutedRatio < 3 ? ((surfaceLum ?? (light ? 1 : 0)) > 0.18 ? "#485363" : "#bfc8d4") : muted) : muted;
         return { accent, bg, surface, fg: safeFg, bgFg, muted: safeMuted, onAccent, light, ha, resolve, pick, neutralBg, neutralSurface, neutralButton, neutralButtonText };
     }
     crThemeVars() {
         const t = this.crResolvedTheme();
         const radius = this.crThemeStyle === "minimal" ? "9px" : this.crThemeStyle === "solid" ? "15px" : "22px";
         const css = {
-            "--cr-accent": t.accent, "--cr-bg": t.bg, "--cr-surface": t.surface, "--cr-text": t.fg, "--cr-bg-text": t.bgFg, "--cr-on-accent": t.onAccent, "--cr-muted": t.muted,
+            "--cr-accent": t.accent, "--cr-bg": t.bg, "--cr-surface": t.surface, "--cr-text": t.fg, "--cr-bg-text": t.bgFg, "--cr-on-accent": t.onAccent, "--cr-muted": t.muted, "--cr-secondary": `color-mix(in srgb, ${t.fg} 77%, ${t.accent} 23%)`,
             "--cr-neutral-bg": t.neutralBg, "--cr-neutral-surface": t.neutralSurface, "--cr-neutral-button": t.neutralButton, "--cr-neutral-button-text": t.neutralButtonText,
             "--cr-is-light": t.light ? "1" : "0", "--cr-radius": radius, "--cr-blur": this.crThemeStyle === "glass" ? "blur(22px)" : "none",
             "--primary-color": t.accent, "--accent-color": t.accent, "--primary-text-color": t.fg, "--secondary-text-color": t.muted,
@@ -2114,7 +2114,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             const on = lights.filter(e => e.state === "on").length;
             return b `<section class="cr-rooms-page">
         <button class="cr-room-back" type="button" @click=${(event) => { event.preventDefault(); event.stopPropagation(); this.roomDetail = ""; this.roomImageEditor = false; this.requestUpdate(); }}>${this.renderIcon("mdi:arrow-left")} Alle Räume</button>
-        <div class="cr-room-detail-head"><div><span class="cr-room-kicker">CONTROLROOM · RÄUME</span><h1>${name}</h1><p>${entities.length} Steuerungen · ${on} von ${lights.length} Lichtern an</p></div>
+        <div class="cr-room-detail-head"><div><h1>${name}</h1><p>${entities.length} Steuerungen · ${on} von ${lights.length} Lichtern an</p></div>
 </div>
 
         <div class="cr-room-detail-hero"><div class="cr-room-detail-art">${this.roomArt(areaId, name)}</div><div><span>RAUMSTATUS</span><h2>${on ? "Gemütlich beleuchtet" : "Alles ruhig"}</h2><p>${lights.length} Lampen · ${entities.length} Steuerungen</p><div class="cr-room-actions"><button ?disabled=${!lights.length} @click=${() => this.roomLightsToggle(lights, true)}>Alle an</button><button ?disabled=${!on} @click=${() => this.roomLightsToggle(lights, false)}>Alle aus</button></div></div></div>
@@ -2125,7 +2125,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             })}</div>
       </section>`;
         }
-        return b `<section class="cr-rooms-page"><div class="cr-rooms-heading"><span class="cr-room-kicker">CONTROLROOM · SMART HOME</span><h1>Räume</h1><p>Dein Zuhause. Jeder Raum, perfekt verbunden.</p></div>
+        return b `<section class="cr-rooms-page"><div class="cr-rooms-heading"><h1>Räume</h1><p>Dein Zuhause. Jeder Raum, perfekt verbunden.</p></div>
       ${areas.length ? b `<div class="cr-room-grid">${areas.map(([id, name]) => {
             const entities = this.roomEntities(id), lights = entities.filter(e => e.entity_id.startsWith("light.")), on = lights.filter(e => e.state === "on").length;
             const temps = entities.filter(e => e.entity_id.startsWith("sensor.") && (e.attributes.device_class === "temperature" || e.entity_id.includes("temperature"))).find(e => !isNaN(Number(e.state)));
@@ -2175,7 +2175,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
                 ${this.renderIcon("mdi:menu")}
               </button>
               <div class="page-heading">
-                ${this.activePage === "settings" && this.settingsSection === "themes" ? "" : this.t(this.activePage)}
+                ${this.activePage === "settings" ? "" : this.t(this.activePage)}
               </div>
             </div>
 
@@ -3672,6 +3672,42 @@ ControlRoomDashboard.styles = i$3 `
     .dashboard .lights-card .premium-light-actions button,
     .dashboard .lights-card .light-action,
     .dashboard .studio-light.active {border-color:color-mix(in srgb,var(--cr-accent) 28%,transparent)}
+
+
+    /* V28: One semantic secondary-color contract for every page and every theme. */
+    .dashboard .eyebrow,.dashboard .cr-room-kicker,.dashboard .cr-rooms-heading p,
+    .dashboard .cr-room-detail-head p,.dashboard .cr-room-detail-hero p,
+    .dashboard .cr-room-detail-hero span:not(.cr-room-kicker),
+    .dashboard .welcome-subtitle,.dashboard .welcome-eyebrow,
+    .dashboard .brand-subtitle,.dashboard .sidebar-subtitle,
+    .dashboard .person-status,.dashboard .person-chip small,
+    .dashboard .settings-intro p,.dashboard .settings-local-note,
+    .dashboard .settings-note,.dashboard .settings-save-copy small,
+    .dashboard .settings-category h2,.dashboard .settings-option-copy small,
+    .dashboard .settings-search input::placeholder,
+    .dashboard .welcome-settings p,.dashboard .welcome-setting-text,
+    .dashboard .cr-room-tile-body p,.dashboard .cr-room-tile-footer,
+    .dashboard .cr-room-visual-head p,.dashboard .cr-room-device small,
+    .dashboard .cr-theme-collection-heading span,
+    .dashboard .cr-style-gallery-head p,.dashboard .cr-atelier-heading p,
+    .dashboard .studio-mood-subtitle,.dashboard .studio-inline-value,
+    .dashboard .light-row-status,.dashboard .premium-lights .light-count,
+    .dashboard .premium-lights .card-subtitle,
+    .dashboard .overview-card small,.dashboard .settings-empty,
+    .dashboard .settings-save-copy small,
+    .dashboard .user-status {color:var(--cr-secondary)!important;opacity:1!important}
+    .dashboard .eyebrow,.dashboard .cr-room-kicker{letter-spacing:.13em}
+    .dashboard .settings-search input{color:var(--cr-text)!important}
+    .dashboard .settings-save-bar{background:var(--cr-surface)!important}
+    .dashboard .settings-save-copy strong{color:var(--cr-text)!important}
+    .dashboard .settings-save-bar .settings-save-copy{min-width:0}
+    .dashboard .settings-back{color:var(--cr-accent)!important}
+    .dashboard .brand-subtitle{color:var(--cr-secondary)!important}
+    @media(max-width:600px){
+      .dashboard .settings-save-bar .settings-save-copy{flex:1 1 100%!important}
+      .dashboard .settings-save-bar .settings-cancel,
+      .dashboard .settings-save-bar .settings-save{flex:1 1 0!important}
+    }
 
 `;
 __decorate([
