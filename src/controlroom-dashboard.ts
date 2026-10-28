@@ -1730,7 +1730,14 @@ export class ControlRoomDashboard extends LitElement {
     this.crThemeSnapshot=JSON.stringify(this.crThemeData());this.settingsSection="overview";
   }
   private renderThemeSettings(){
-    const all=this.crPalettes();
+    // Show only one entry per visually equivalent palette; keep the selected palette visible.
+    const rawPalettes=this.crPalettes();
+    const seen=new Set<string>();
+    const all=rawPalettes.filter(p=>{
+      const key=[p.accent,p.bg,p.surface,p.text].map(v=>v.toLowerCase()).join("|");
+      if(seen.has(key) && p.id!==this.crTheme)return false;
+      seen.add(key);return true;
+    });
     const query=this.crThemeSearch.trim().toLocaleLowerCase();
     const filtered=all.filter(p=>{
       if(query && !p.name.toLocaleLowerCase().includes(query))return false;
@@ -1745,15 +1752,14 @@ export class ControlRoomDashboard extends LitElement {
     const visible=filtered.slice(page*perPage,(page+1)*perPage);
     const selected=all.find(p=>p.id===this.crTheme)||all[0];
     return html`<div class="settings-center cr-theme-studio cr-theme-studio-v17">
-      <button class="settings-back" @click=${()=>this.cancelCRTheme()}>${this.renderIcon("mdi:arrow-left")} Einstellungen</button>
-      <div class="cr-room-visual-head"><div class="cr-room-kicker">CONTROLROOM · DESIGN COLLECTION</div><h2>Theme Atelier</h2><p>${all.length} exklusive ControlRoom Farbwelten. Entdecke deinen persönlichen Look.</p></div>
+      <div class="cr-atelier-heading"><button class="cr-atelier-back" type="button" title="Zurück zu Einstellungen" aria-label="Zurück zu Einstellungen" @click=${()=>this.cancelCRTheme()}>${this.renderIcon("mdi:arrow-left")}</button><div><div class="cr-room-kicker">CONTROLROOM · DESIGN COLLECTION</div><h2>Theme Atelier</h2><p>${all.length} Farbwelten · Dein persönlicher Look.</p></div></div>
       <div class="cr-theme-current"><span class="cr-theme-current-swatch" style=${`background:linear-gradient(135deg,${selected.bg},${selected.surface} 58%,${selected.accent})`}></span><span><small>AKTUELLE AUSWAHL</small><strong>${selected.name}</strong><small>${this.crThemeStyle==="glass"?"Glass Premium":this.crThemeStyle==="solid"?"Modern Solid":"Minimal"}</small></span>${this.renderIcon("mdi:check-decagram")}</div>
       <section class="cr-style-gallery" aria-label="Visual Style"><div class="cr-style-gallery-head"><span class="cr-room-kicker">OBERFLÄCHEN · LIVE-VORSCHAU</span><h3>Visual Style</h3><p>Wähle die Oberfläche – die Vorschau übernimmt deine aktuelle Farbwelt.</p></div><div class="cr-theme-style-list">${([['glass','Glass Premium','Transparenz und weiche Glaseffekte'],['solid','Modern Solid','Klare, elegante Oberflächen'],['minimal','Minimal','Reduziert und kompakt']] as const).map(([id,title,desc])=>html`<button type="button" class="cr-style-option ${id} ${this.crThemeStyle===id?'chosen':''}" aria-pressed=${this.crThemeStyle===id?'true':'false'} @click=${()=>{this.crThemeStyle=id;this.requestUpdate();}}><span class="cr-style-scene"><span class="cr-style-scene-header"><i></i><i></i><i></i></span><span class="cr-style-scene-body"><span class="cr-style-scene-main"><i></i><i></i><i></i></span><span class="cr-style-scene-side"><i></i><i></i></span></span></span><span class="cr-style-option-info"><strong>${title}</strong><small>${desc}</small></span>${this.crThemeStyle===id?html`<span class="cr-style-selected">${this.renderIcon("mdi:check-circle")}</span>`:nothing}</button>`)}</div></section>
       <div class="cr-theme-tools"><label class="cr-theme-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Farbwelt suchen …" .value=${this.crThemeSearch} @input=${(e:Event)=>{this.crThemeSearch=(e.target as HTMLInputElement).value;this.crThemePage=0;}} /></label><div class="cr-theme-filters">${([['all','Alle'],['favorites','Klassiker'],['dark','Dunkel'],['light','Hell']] as const).map(([id,name])=>html`<button class=${this.crThemeFilter===id?'active':''} @click=${()=>{this.crThemeFilter=id;this.crThemePage=0;}}>${name}</button>`)}</div></div>
       <div class="cr-theme-collection-heading"><h3>Farbwelten</h3><span>${filtered.length} Designs · Seite ${page+1} / ${pages}</span></div>
       <div class="cr-theme-grid">${visible.map(p=>html`<button class="cr-theme-choice ${this.crTheme===p.id?'chosen':''}" @click=${()=>{this.crTheme=p.id;this.crThemeSource="controlroom";this.requestUpdate();}}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface};color:${p.text}`}></i><i style=${`background:${p.surface};color:${p.text}`}></i><em class="cr-theme-sample-text" style=${`color:${p.text}`}>Aa</em><b class="cr-theme-sample-action" style=${`background:${p.accent};border:1px solid ${p.text}55`}></b></span><strong>${p.name}</strong>${this.crTheme===p.id?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
       ${filtered.length===0?html`<p class="settings-note">Keine Farbwelt gefunden. Probiere einen anderen Suchbegriff.</p>`:nothing}
-      ${pages>1?html`<nav class="cr-theme-pagination" aria-label="Farbwelten Seiten"><button class="cr-page-nav" ?disabled=${page===0} @click=${()=>{this.crThemePage=Math.max(0,page-1);}}>${this.renderIcon("mdi:chevron-left")}<span>Zurück</span></button><div class="cr-page-center"><span class="cr-page-eyebrow">KOLLEKTION</span><label class="cr-page-select"><select aria-label="Seite auswählen" .value=${String(page)} @change=${(e:Event)=>{this.crThemePage=Number((e.target as HTMLSelectElement).value);}}>${Array.from({length:pages},(_,i)=>html`<option value=${String(i)}>Seite ${i+1} / ${pages}</option>`)}</select>${this.renderIcon("mdi:chevron-down")}</label><div class="cr-page-progress"><span style=${`width:${((page+1)/pages)*100}%`}></span></div></div><button class="cr-page-nav" ?disabled=${page>=pages-1} @click=${()=>{this.crThemePage=Math.min(pages-1,page+1);}}><span>Weiter</span>${this.renderIcon("mdi:chevron-right")}</button></nav>`:nothing}
+      ${pages>1?html`<nav class="cr-theme-pagination" aria-label="Farbwelten Seiten"><button class="cr-page-nav cr-atelier-page-button" ?disabled=${page===0} @click=${()=>{this.crThemePage=Math.max(0,page-1);}}><span>Zurück</span></button><div class="cr-page-center"><span class="cr-page-eyebrow">KOLLEKTION</span><label class="cr-page-select"><select aria-label="Seite auswählen" .value=${String(page)} @change=${(e:Event)=>{this.crThemePage=Number((e.target as HTMLSelectElement).value);}}>${Array.from({length:pages},(_,i)=>html`<option value=${String(i)}>Seite ${i+1} / ${pages}</option>`)}</select>${this.renderIcon("mdi:chevron-down")}</label><div class="cr-page-progress"><span style=${`width:${((page+1)/pages)*100}%`}></span></div></div><button class="cr-page-nav cr-atelier-page-button" ?disabled=${page>=pages-1} @click=${()=>{this.crThemePage=Math.min(pages-1,page+1);}}><span>Weiter</span></button></nav>`:nothing}
 
       <div class="cr-theme-actions"><span class="cr-theme-action-caption">${selected.name}</span><button @click=${()=>this.cancelCRTheme()}>Abbrechen</button><button @click=${()=>this.saveCRTheme()}>Speichern</button></div>
     </div>`;
@@ -3322,6 +3328,35 @@ export class ControlRoomDashboard extends LitElement {
     @media(max-width:650px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
     @media(max-width:400px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:1fr!important}}
 
+
+    /* V23 — compact, fluid Atelier composition */
+    .dashboard .cr-atelier-heading{display:flex;align-items:center;gap:16px;min-width:0;margin:0 0 10px!important}
+    .dashboard .cr-atelier-heading h2{font-size:clamp(22px,2.4vw,30px)!important;margin:3px 0!important}
+    .dashboard .cr-atelier-heading p{margin:3px 0 0!important;font-size:12px!important;color:var(--cr-muted)!important}
+    .dashboard .cr-atelier-back{display:grid!important;place-items:center!important;flex:0 0 42px!important;width:42px!important;height:42px!important;border-radius:14px!important;border:1px solid color-mix(in srgb,var(--cr-text) 18%,transparent)!important;background:var(--cr-surface)!important;color:var(--cr-text)!important;cursor:pointer!important}
+    .dashboard .cr-style-gallery{margin:10px 0 18px!important}
+    .dashboard .cr-style-gallery-head{margin-bottom:9px!important}
+    .dashboard .cr-style-gallery-head h3{font-size:16px!important}
+    .dashboard .cr-style-gallery-head p{font-size:11px!important}
+    .dashboard .cr-style-gallery .cr-theme-style-list{gap:10px!important}
+    .dashboard .cr-style-gallery .cr-style-option{display:grid!important;grid-template-columns:minmax(0,110px) minmax(0,1fr)!important;align-items:center!important;gap:11px!important;min-height:95px!important;padding:9px!important;border-radius:14px!important}
+    .dashboard .cr-style-gallery .cr-style-scene{height:72px!important;padding:7px!important;gap:5px!important;border-radius:9px!important}
+    .dashboard .cr-style-gallery .cr-style-scene-body{gap:5px!important}
+    .dashboard .cr-style-gallery .cr-style-scene-main,.dashboard .cr-style-gallery .cr-style-scene-side{padding:6px!important;gap:4px!important}
+    .dashboard .cr-style-gallery .cr-style-scene-side i{height:13px!important}
+    .dashboard .cr-style-gallery .cr-style-option-info strong{font-size:12px!important}
+    .dashboard .cr-style-gallery .cr-style-option-info small{font-size:10px!important}
+    .dashboard .cr-style-gallery .cr-style-selected{top:5px!important;right:5px!important}
+    .dashboard .cr-theme-pagination{display:grid!important;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)!important;gap:12px!important;align-items:center!important;max-width:100%!important;padding:12px 16px!important;margin:18px 0 26px!important;border-radius:16px!important}
+    .dashboard .cr-theme-pagination .cr-atelier-page-button{display:inline-flex!important;position:static!important;inset:auto!important;transform:none!important;min-width:0!important;width:auto!important;max-width:160px!important;min-height:42px!important;padding:9px 17px!important;border-radius:12px!important;white-space:nowrap!important;font-size:13px!important;line-height:1.3!important;box-shadow:none!important}
+    .dashboard .cr-theme-pagination .cr-atelier-page-button:first-child{justify-self:start!important}
+    .dashboard .cr-theme-pagination .cr-atelier-page-button:last-child{justify-self:end!important}
+    .dashboard .cr-theme-pagination .cr-page-center{min-width:110px!important;max-width:200px!important}
+    .dashboard .cr-theme-pagination .cr-page-select select{max-width:180px!important}
+    @container (max-width:900px){.dashboard .cr-style-gallery .cr-style-option{grid-template-columns:1fr!important}.dashboard .cr-style-gallery .cr-style-scene{height:78px!important}}
+    @container (max-width:500px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:1fr!important}.dashboard .cr-style-gallery .cr-style-option{grid-template-columns:100px minmax(0,1fr)!important}.dashboard .cr-theme-pagination{grid-template-columns:auto minmax(0,1fr) auto!important;gap:5px!important;padding:10px 7px!important}.dashboard .cr-theme-pagination .cr-atelier-page-button{padding:9px 10px!important;font-size:12px!important}.dashboard .cr-theme-pagination .cr-page-center{min-width:0!important}.dashboard .cr-theme-pagination .cr-page-select select{max-width:125px!important;font-size:11px!important}}
+    @media(max-width:520px){.dashboard .cr-style-gallery .cr-theme-style-list{grid-template-columns:1fr!important}.dashboard .cr-style-gallery .cr-style-option{grid-template-columns:95px minmax(0,1fr)!important}}
+
 `;
 
   protected render() {
@@ -3343,7 +3378,7 @@ export class ControlRoomDashboard extends LitElement {
                 ${this.renderIcon("mdi:menu")}
               </button>
               <div class="page-heading">
-                ${this.t(this.activePage)}
+                ${this.activePage==="settings" && this.settingsSection==="themes" ? "" : this.t(this.activePage)}
               </div>
             </div>
 
