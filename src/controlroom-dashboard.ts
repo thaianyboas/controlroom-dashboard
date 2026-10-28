@@ -1,3 +1,4 @@
+import "./controlroom-apartment-3d";
 
 
 import "./controlroom-strategy.js";
@@ -1713,6 +1714,7 @@ export class ControlRoomDashboard extends LitElement {
     const lights=this.livingEntities("light"),on=lights.filter(e=>e.state==="on").length;
     return html`<section class="living-home">
       <div class="living-intro"><span class="living-eyebrow">CONTROLROOM / LIVING SPACES</span><h1>${this.getGreeting()}${greetingName?", "+greetingName:""}.</h1><p>Dein Zuhause. Intelligent, elegant, lebendig.</p></div>
+      <section class="living-apartment-hero"><controlroom-apartment-3d .hass=${this.hass} sofalicht="light.sofalicht_3" @room-selected=${(e:CustomEvent<{room:string}>)=>{const name=e.detail.room;this.activePage="rooms";this.requestUpdate();console.info("ControlRoom 3D: selected room",name);}}></controlroom-apartment-3d><div class="living-apartment-note">3D Apartment · Erste Vorschau · Raumgeometrie noch nicht maßstabsgetreu</div></section>
       <div class="living-home-grid">
         <div class="living-primary">
           <div class="living-lights-feature">${this.renderLightsCard()}</div>
@@ -2269,6 +2271,7 @@ export class ControlRoomDashboard extends LitElement {
   }
 
   static styles = css`
+    .living-apartment-hero{margin:0 0 22px;min-width:0}.living-apartment-hero controlroom-apartment-3d{display:block;width:100%}.living-apartment-note{font-size:11px;opacity:.65;padding:8px 4px 0}
     /* V54 Living Spaces: scope to new components, leave V53 lights and room art untouched */
     .living-home,.living-full-page{padding:clamp(14px,2vw,30px);min-width:0;color:var(--cr-text)}
     .living-intro{margin:0 0 25px}.living-eyebrow{font-size:10px;letter-spacing:2.1px;font-weight:800;opacity:.64}
