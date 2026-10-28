@@ -1444,32 +1444,16 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             console.error(this.t("lightActionError"), error);
         }
     }
-    pendantLightColor(lights) {
-        const active = lights.filter(light => light.state === "on");
-        if (!active.length)
-            return "#3b3c42";
-        const colors = active.map(light => {
-            const a = light.attributes;
-            const rgb = a.rgb_color;
-            if (Array.isArray(rgb) && rgb.length >= 3 && rgb.slice(0, 3).every(v => typeof v === "number" && Number.isFinite(v)))
-                return rgb.slice(0, 3);
-            const kelvin = Number(a.color_temp_kelvin) || (Number(a.color_temp) > 0 ? 1000000 / Number(a.color_temp) : 0);
-            if (kelvin > 0) {
-                const k = Math.max(1800, Math.min(6500, kelvin));
-                const mix = (k - 1800) / 4700;
-                return [255 - 35 * mix, 193 + 43 * mix, 125 + 130 * mix];
-            }
-            return [255, 244, 221];
-        });
-        const avg = [0, 1, 2].map(i => Math.round(colors.reduce((sum, c) => sum + c[i], 0) / colors.length));
-        return `rgb(${avg.join(",")})`;
+    pendantLightColor(_lights) {
+        // Decorative illumination is deliberately independent from RGB light colors.
+        return "#ffe9bc";
     }
     renderPendant(on, brightness = 75, emission = "#fff4dd") {
         // The pendant keeps its signature silhouette. Its light and metallic details
         // follow the selected ControlRoom palette instead of hardcoded purple.
         const theme = this.crResolvedTheme();
-        const accent = theme.accent;
-        const glowStrength = Math.min(0.92, Math.max(0.28, brightness / 115));
+        const accent = "#ffe7b5";
+        const glowStrength = Math.min(0.72, Math.max(0.30, brightness / 145));
         const metal = theme.light ? "#373b43" : "#292b30";
         const metalShadow = theme.light ? "#17191e" : "#101115";
         const rim = theme.light ? "#626873" : "#555963";
@@ -1490,7 +1474,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       <rect x="69" y="51" width="12" height="12" rx="3" fill=${metalShadow}/>
       <path d="M69 60Q45 69 31 111Q75 127 119 111Q105 69 81 60Z"
         fill="url(#cr-metal)" stroke=${rim}/>
-      <ellipse cx="75" cy="111" rx="44" ry="8" fill=${on ? accent : metal}/>
+      <ellipse cx="75" cy="111" rx="44" ry="8" fill=${on ? "#b79a6a" : metal}/>
       <ellipse cx="75" cy="112" rx="26" ry="4" fill=${on ? emission : rim} opacity=${on ? "0.95" : "0.35"}/>
     </svg>`;
     }
@@ -1586,7 +1570,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             return b `<button type="button" class="ambient-room ${roomOn ? "illuminated" : ""}"
               @click=${() => { this.selectedRoom = room; this.openLightColorId = ""; this.lightsTab = "lights"; }}>
               <span class="ambient-room-glow"></span>
-              <span class="ambient-room-art" aria-hidden="true">${this.roomArt(`licht-${this.roomKind(room)}`, room)}</span>
+              <span class="ambient-room-art" aria-hidden="true">${this.roomArt(`licht-${this.roomKind(room)}`, room, true)}</span>
               <span class="ambient-room-details"><span class="ambient-room-name">${room}</span>
               <span class="ambient-room-count"><span class="ambient-room-status ${roomOn ? "is-on" : ""}"></span>${roomOn} / ${roomLights.length} ${this.getLanguage() === "de" ? "an" : this.getLanguage() === "pt" ? "acesas" : "on"}</span></span>
             </button>`;
@@ -2207,7 +2191,7 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         return icons[this.roomKind(name)];
     }
     // V35: original, lightweight vector interiors. No external images or network requests.
-    roomArt(areaId, name) {
+    roomArt(areaId, name, premiumLighting = false) {
         const kind = this.roomKind(name);
         const interiors = {
             wohnzimmer: `<path d="M65 120h195v39H65z" fill="#716d5b"/><rect x="78" y="89" width="164" height="53" rx="13" fill="#a99b7e"/><rect x="89" y="99" width="65" height="36" rx="8" fill="#c3b69a"/><rect x="164" y="99" width="65" height="36" rx="8" fill="#c3b69a"/><path d="M79 135v17m161-17v17" stroke="#5c4e43" stroke-width="7"/><path d="M280 56v84" stroke="#b4a18a" stroke-width="5"/><path d="M263 74q18-32 35 0z" fill="#302f31"/><ellipse cx="280" cy="76" rx="19" ry="4" fill="#ffdda1"/><path d="M29 144v-40" stroke="#7d6753" stroke-width="6"/><path d="M29 109q-37-19-12-42 25 6 12 42m0 0q6-42 31-38 10 28-31 38" fill="#657d55"/><rect x="14" y="137" width="31" height="25" rx="5" fill="#98816c"/><rect x="121" y="148" width="78" height="9" rx="5" fill="#6d5342"/>`,
@@ -2218,11 +2202,32 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             flur: `<rect x="40" y="128" width="246" height="12" rx="3" fill="#8f735d"/><path d="M61 139v26m203-26v26" stroke="#745945" stroke-width="7"/><rect x="110" y="38" width="94" height="84" rx="44" fill="#78877d" opacity=".35" stroke="#d4b38b" stroke-width="5"/><path d="M264 28v30" stroke="#a99d86" stroke-width="3"/><path d="M249 59q15-28 30 0z" fill="#373637"/><ellipse cx="264" cy="61" rx="15" ry="4" fill="#ffdda1"/><rect x="62" y="110" width="23" height="17" rx="3" fill="#b9a58d"/><path d="M73 112q-25-26-8-42 17 13 8 42m0 0q6-29 25-24 5 19-25 24" fill="#70845f"/>`,
             balkon: `<path d="M16 115h294m-270 0v48m42-48v48m42-48v48m42-48v48m42-48v48m42-48v48m42-48v48" stroke="#988b77" stroke-width="5"/><path d="M112 112q18-42 63-25l-9 54h-64z" fill="#b6a58d"/><path d="M116 143v19m45-21v21" stroke="#7c6653" stroke-width="7"/><rect x="194" y="133" width="57" height="9" rx="4" fill="#99785c"/><path d="M221 141v22" stroke="#99785c" stroke-width="6"/><rect x="44" y="140" width="32" height="23" rx="4" fill="#98836b"/><path d="M60 141q-39-42-12-61 23 20 12 61m0 0q10-46 35-32 4 24-35 32" fill="#6c845f"/><path d="M278 36v31" stroke="#b8a88f" stroke-width="3"/><path d="M263 70q15-25 30 0z" fill="#3b3b3b"/><ellipse cx="278" cy="71" rx="15" ry="4" fill="#ffdda1"/>`
         };
+        // Detailed, layered SVG miniatures exclusively for Startseite > Lichter.
+        // Bereiche > Räume continues using its original independent illustrations.
+        const premium = {
+            badezimmer: `<ellipse cx="172" cy="164" rx="135" ry="10" fill="#050b09" opacity=".27"/>
+        <path d="M66 111h188v12H66z" fill="#e0d4bf"/><path d="M73 123h174v40H73z" fill="#786e60"/><path d="M73 123h174v5H73z" fill="#aa9b83"/><path d="M160 129v34" stroke="#554d43" opacity=".5"/><path d="M73 161h174" stroke="#413b34" stroke-width="3"/>
+        <ellipse cx="164" cy="117" rx="47" ry="10" fill="#f1e8d8"/><ellipse cx="164" cy="115" rx="31" ry="5" fill="#b8b4a8"/><path d="M164 113V99q0-9 8-9t8 9" fill="none" stroke="#bda47a" stroke-width="4"/>
+        <circle cx="164" cy="59" r="45" fill="#171e1c" stroke="#dbc19a" stroke-width="7"/><circle cx="164" cy="59" r="37" fill="#5e6e66" opacity=".27"/><path d="M139 33q23-13 43 0" fill="none" stroke="#fff6dc" stroke-opacity=".17" stroke-width="4"/>
+        <path d="M277 72v79" stroke="#ae9471" stroke-width="5"/><path d="M278 85h24v51h-24" fill="#d5c3a8"/><path d="M278 85h24v6h-24" fill="#f5e7d0"/>
+        <rect x="31" y="141" width="33" height="23" rx="5" fill="#a28a71"/><path d="M47 143q-33-27-13-50 25 13 13 50m0 0q6-36 30-33 7 24-30 33" fill="#677f5d"/><rect x="221" y="99" width="11" height="13" rx="2" fill="#c7b89b"/><rect x="223" y="96" width="7" height="4" rx="1" fill="#d9c6a1"/>`,
+            wohnzimmer: `<ellipse cx="166" cy="164" rx="155" ry="11" fill="#050b09" opacity=".25"/>
+        <path d="M72 107q0-23 23-23h134q23 0 23 23v42H72z" fill="#847964"/><rect x="81" y="101" width="164" height="49" rx="13" fill="#b7a88c"/><rect x="89" y="105" width="70" height="36" rx="10" fill="#cfc1a4"/><rect x="166" y="105" width="70" height="36" rx="10" fill="#c8b89b"/>
+        <path d="M73 118q-15-3-15 12v19q0 10 12 10h183q13 0 13-11v-19q0-15-15-12v27H73z" fill="#9b8d76"/><path d="M85 159v7m163-7v7" stroke="#655342" stroke-width="6"/><path d="M190 114l26-6 13 27-29 4z" fill="#734f54"/><path d="M103 112l23-6 14 27-30 5z" fill="#e0c6a3"/>
+        <path d="M282 149V69q0-48-41-48" fill="none" stroke="#252624" stroke-width="5"/><path d="M224 45q17-29 35 0z" fill="#2a2c2a" stroke="#6b665b" stroke-width="1.5"/><ellipse cx="241" cy="45" rx="18" ry="4" fill="#ffe4ad"/>
+        <ellipse cx="170" cy="150" rx="45" ry="10" fill="#805c44"/><path d="M144 156v10m52-10v10" stroke="#614631" stroke-width="4"/><rect x="166" y="137" width="9" height="13" rx="2" fill="#e7d5b6"/><path d="M170 138q-5-7 1-11 5 6-1 11" fill="#ffe7a6"/>
+        <rect x="20" y="140" width="31" height="24" rx="5" fill="#777d68"/><path d="M36 142q-36-29-19-52 26 8 19 52m0 0q7-48 36-42 6 27-36 42m0 0q-9-45-28-34-3 20 28 34" fill="#4d6848"/>`
+        };
         const art = interiors[kind] || `<circle cx="165" cy="82" r="51" fill="#9e927d" opacity=".35"/><path d="M103 91l62-54 62 54v65H103z" fill="#8f8774"/><path d="M145 156v-40h40v40" fill="#514b43"/>`;
         return b `<svg class="cr-room-illustration" viewBox="0 0 330 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label=${`Illustration: ${name}`} preserveAspectRatio="xMidYMid meet">
-      <defs><radialGradient id=${`cr-light-${areaId}`} cx="70%" cy="48%" r="55%"><stop offset="0%" stop-color="#f6c57d" stop-opacity=".42"/><stop offset="100%" stop-color="#f6c57d" stop-opacity="0"/></radialGradient></defs>
+      <defs><radialGradient id=${`cr-light-${areaId}`} cx="70%" cy="48%" r="55%"><stop offset="0%" stop-color="#ffe9bd" stop-opacity=".25"/><stop offset="100%" stop-color="#ffe9bd" stop-opacity="0"/></radialGradient></defs>
       <path d="M0 157h330" stroke="currentColor" opacity=".12"/>
-      <g class="cr-room-interior-shapes" .innerHTML=${art}></g>
+      <defs>
+        <linearGradient id=${`cr-premium-material-${areaId}`} x1="0" y1="0" x2="0.15" y2="1"><stop offset="0" stop-color="#fff5dd" stop-opacity=".16"/><stop offset=".6" stop-color="#fff5dd" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".19"/></linearGradient>
+        <filter id=${`cr-premium-shadow-${areaId}`} x="-20%" y="-30%" width="145%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#050a08" flood-opacity=".33"/></filter>
+      </defs>
+      <g class="cr-room-interior-shapes" filter=${premiumLighting ? `url(#cr-premium-shadow-${areaId})` : "none"} .innerHTML=${premiumLighting ? (premium[kind] || art) : art}></g>
+      ${premiumLighting ? b `<rect x="0" y="0" width="330" height="180" fill=${`url(#cr-premium-material-${areaId})`} opacity=".35" pointer-events="none"/>` : A}
       <ellipse class="cr-room-illustration-light" cx="219" cy="101" rx="133" ry="86" fill=${`url(#cr-light-${areaId})`}/>
     </svg>`;
     }
@@ -2970,7 +2975,7 @@ ControlRoomDashboard.styles = i$3 `
     .ambient-rooms { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:10px; margin-top:14px; }
     .ambient-room { position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:7px; min-height:105px; padding:14px; overflow:hidden; border-radius:16px; border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.035); color:var(--cr-muted); text-align:left; cursor:pointer; }
     .ambient-room.illuminated { border-color:rgba(231,178,109,.35); }
-    .ambient-room-glow { position:absolute; inset:0; pointer-events:none; opacity:0; background:radial-gradient(ellipse at 80% 90%,rgba(247,184,96,.35),transparent 72%); transition:opacity 450ms ease; }
+    .ambient-room-glow { position:absolute; inset:0; pointer-events:none; opacity:0; background:radial-gradient(ellipse at 80% 90%,rgba(255,233,190,.17),transparent 72%); transition:opacity 450ms ease; }
     .ambient-room.illuminated .ambient-room-glow { opacity:1; }
     .ambient-room-icon,.ambient-room-name,.ambient-room-count { position:relative; z-index:1; }
     .ambient-room-icon { color:var(--cr-muted); }
