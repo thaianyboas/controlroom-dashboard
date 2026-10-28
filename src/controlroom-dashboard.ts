@@ -363,6 +363,10 @@ export class ControlRoomDashboard extends LitElement {
   @state() private crThemePage = 0;
   @state() private crHAMode: "auto" | "light" | "dark" = "auto";
   private crThemeSnapshot = "";
+  private crRemoteUser = "";
+  private crRemoteLoading = false;
+  private crRemoteReady = false;
+  private crRemoteSaving = false;
   @state() private crDefaultTheme = "purple";
   @state() private crDefaultFeedback = "";
   @state() private crDefaultStyle: "glass" | "solid" | "minimal" = "glass";
@@ -577,6 +581,9 @@ export class ControlRoomDashboard extends LitElement {
 
   protected updated(): void {
     void this.refreshWasteEvents();
+    if(this.hass?.user?.id && this.hass.callWS && this.crRemoteUser!==this.hass.user.id && !this.crRemoteLoading){
+      void this.loadRemoteCRTheme();
+    }
     if (this.hass?.callWS && !this.registryLoaded && !this.registryLoading) {
       void this.loadAreaRegistry();
     }
@@ -1764,6 +1771,45 @@ export class ControlRoomDashboard extends LitElement {
     const themes=(this.hass as unknown as {themes?:{themes?:Record<string,unknown>}})?.themes?.themes;
     return themes?Object.keys(themes).sort((a,b)=>a.localeCompare(b)):[];
   }
+  private async loadRemoteCRTheme(){
+    const user=this.hass?.user?.id;
+    if(!user || !this.hass?.callWS || this.crRemoteLoading)return;
+    this.crRemoteLoading=true;
+    try{
+      const result=await this.hass.callWS({type:"controlroom_preferences/get"}) as Record<string,unknown>;
+      if(this.hass?.user?.id!==user)return;
+      const valid=(v:unknown)=>typeof v==="string" && this.crPalettes().some(p=>p.id===v);
+      const style=(v:unknown):v is "glass"|"solid"|"minimal"=>v==="glass"||v==="solid"||v==="minimal";
+      if(valid(result.theme))this.crTheme=result.theme as string;
+      if(style(result.style))this.crThemeStyle=result.style;
+      if(valid(result.default_theme))this.crDefaultTheme=result.default_theme as string;
+      if(style(result.default_style))this.crDefaultStyle=result.default_style;
+      this.crRemoteUser=user;this.crRemoteReady=true;
+      this.requestUpdate();
+    }catch(error){
+      // Integration missing: retain local settings, retry after a later HA reload.
+      this.crRemoteUser=user;
+      this.crRemoteReady=false;
+      console.warn("ControlRoom Preferences: install/configure integration",error);
+    }finally{this.crRemoteLoading=false;}
+  }
+  private async persistRemoteCRTheme(makeDefault=false){
+    if(!this.hass?.callWS || !this.hass.user?.id){
+      this.crDefaultFeedback="Home Assistant Verbindung erforderlich";return false;
+    }
+    this.crRemoteSaving=true;
+    try{
+      await this.hass.callWS({type:"controlroom_preferences/set",theme:this.crTheme,style:this.crThemeStyle,default:makeDefault});
+      this.crRemoteReady=true;
+      if(makeDefault){this.crDefaultTheme=this.crTheme;this.crDefaultStyle=this.crThemeStyle;}
+      this.crDefaultFeedback=makeDefault?"Als Standard gespeichert ✓":"Gespeichert ✓";
+      this.requestUpdate();return true;
+    }catch(error){
+      this.crDefaultFeedback="Synchronisierung fehlgeschlagen – ControlRoom Preferences prüfen";
+      console.warn("ControlRoom Preferences: save failed",error);
+      this.requestUpdate();return false;
+    }finally{this.crRemoteSaving=false;}
+  }
   private cancelCRTheme(){
     if(this.crThemeSnapshot){
       const v=JSON.parse(this.crThemeSnapshot);
@@ -1780,28 +1826,16 @@ export class ControlRoomDashboard extends LitElement {
     this.crDefaultFeedback="";
     this.requestUpdate();
   }
-  private saveCRTheme(){
+  private async saveCRTheme(){
+    if(!(await this.persistRemoteCRTheme(false)))return;
     try{localStorage.setItem("controlroom-theme-v1",JSON.stringify(this.crThemeData()));}catch(error){console.warn(error);}
-    // External theme colors are applied locally; do not change the HA theme for other dashboards.
     this.crThemeSnapshot=JSON.stringify(this.crThemeData());this.settingsSection="overview";
   }
-  private setCRThemeAsDefault(){
-    const data=this.crThemeData();
-    try {
-      const payload=JSON.stringify(data);
-      localStorage.setItem("controlroom-theme-default-v1",payload);
-      localStorage.setItem("controlroom-theme-v1",payload);
-      if(localStorage.getItem("controlroom-theme-default-v1")!==payload)throw new Error("Theme storage verification failed");
-      this.crDefaultTheme=data.theme;
-      this.crDefaultStyle=data.style;
-      this.crThemeSnapshot=payload;
-      this.crDefaultFeedback="Als Standard gespeichert ✓";
-      this.requestUpdate();
-    } catch(error) {
-      this.crDefaultFeedback="Speichern fehlgeschlagen – Browser-Speicher prüfen";
-      console.warn("ControlRoom: default theme could not be saved",error);
-      this.requestUpdate();
-    }
+  private async setCRThemeAsDefault(){
+    if(!(await this.persistRemoteCRTheme(true)))return;
+    const payload=JSON.stringify(this.crThemeData());
+    try{localStorage.setItem("controlroom-theme-default-v1",payload);localStorage.setItem("controlroom-theme-v1",payload);}catch(error){console.warn(error);}
+    this.crThemeSnapshot=payload;
   }
   private renderThemeSettings(){
     // Show only one entry per visually equivalent palette; keep the selected palette visible.
