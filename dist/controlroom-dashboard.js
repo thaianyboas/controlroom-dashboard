@@ -379,6 +379,9 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         super(...arguments);
         this.config = {};
         this.activePage = "home";
+        this.livingPanel = "";
+        this.livingCalendarOffset = 0;
+        this.livingMountedCards = new Map();
         this.mobileMenuOpen = false;
         this.settingsSection = "overview";
         this.settingsSearch = "";
@@ -468,6 +471,46 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         this.settingsSavedNotice = false;
         this.smartDraftSnapshot = "";
         this.welcomeDraftSnapshot = "";
+    }
+    livingEntities(domain) {
+        return Object.values(this.hass?.states || {}).filter(e => e.entity_id.startsWith(domain + ".") && !["unavailable", "unknown"].includes(e.state));
+    }
+    livingName(e) { return String(e.attributes.friendly_name || e.entity_id.split(".")[1].replace(/_/g, " ")); }
+    livingAction(e, service, data = {}) {
+        const domain = e.entity_id.split(".")[0];
+        const method = service || (domain === "cover" ? (e.state === "open" ? "close_cover" : "open_cover") : "toggle");
+        if (!this.hass?.callService)
+            return;
+        void this.hass.callService(domain, method, { entity_id: e.entity_id, ...data }).catch(error => console.warn("ControlRoom action failed", error));
+    }
+    livingCardMount(key, tag, config) {
+        const host = this.renderRoot.querySelector(`[data-living-mount="${key}"]`);
+        if (!host || !this.hass)
+            return;
+        let el = this.livingMountedCards.get(key);
+        if (!el || el.parentElement !== host) {
+            host.replaceChildren();
+            el = document.createElement(tag);
+            try {
+                const card = el;
+                if (typeof card.setConfig === "function")
+                    card.setConfig(config);
+                else {
+                    host.textContent = "Karte lädt …";
+                    if (!customElements.get(tag))
+                        void customElements.whenDefined(tag).then(() => this.requestUpdate());
+                    return;
+                }
+                host.replaceChildren(el);
+                this.livingMountedCards.set(key, el);
+            }
+            catch (error) {
+                console.warn("ControlRoom card mount", key, error);
+                host.textContent = "Karte nicht verfügbar";
+                return;
+            }
+        }
+        el.hass = this.hass;
     }
     crFontCacheKey(user) { return `controlroom-font-v34:${user}`; }
     crValidFont(value) {
@@ -761,6 +804,13 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         catch { /* Private mode / storage unavailable */ }
     }
     updated() {
+        if (this.activePage === "home" || this.activePage === "media") {
+            this.livingCardMount("music", "controlroom-music-card", { type: "custom:controlroom-music-card" });
+        }
+        if (this.activePage === "cameras" || this.activePage === "home") {
+            const cameras = this.livingEntities("camera").slice(0, this.activePage === "home" ? 1 : 8);
+            cameras.forEach((e, i) => this.livingCardMount("camera" + i, "hui-picture-entity-card", { type: "picture-entity", entity: e.entity_id, camera_view: "live", show_name: true, show_state: false }));
+        }
         void this.refreshWasteEvents();
         if (this.hass?.user?.id && this.hass.callWS && this.crRemoteUser !== this.hass.user.id && !this.crRemoteLoading) {
             void this.loadRemoteCRTheme();
@@ -1727,48 +1777,94 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
       </aside>
     `;
     }
+    livingObject(kind, active = false) {
+        const art = {
+            climate: `<rect x="45" y="44" width="150" height="91" rx="12" fill="url(#body)"/><rect x="56" y="53" width="128" height="68" rx="6" fill="#363b45"/>${Array.from({ length: 7 }, (_, i) => `<path d="M${68 + i * 17} 59v57" stroke="#7b808b" stroke-width="7" stroke-linecap="round"/>`).join("")}<rect x="182" y="58" width="15" height="51" rx="6" fill="#17191f"/>${active ? '<path d="M87 32q-10-13 0-24m33 24q-10-13 0-24m33 24q-10-13 0-24" stroke="#f3bc73" stroke-width="4" fill="none" opacity=".8"/>' : ""}`,
+            sockets: `<path d="M71 35l100 0 19 19v82l-19 14H71L52 136V54z" fill="url(#body)" stroke="#828690" stroke-width="2"/><rect x="74" y="54" width="96" height="75" rx="13" fill="#1c2028"/><circle cx="105" cy="88" r="10" fill="#626873"/><circle cx="140" cy="88" r="10" fill="#626873"/><circle cx="105" cy="88" r="4" fill="#111318"/><circle cx="140" cy="88" r="4" fill="#111318"/><path d="M121 109v-10" stroke="#9ca0a7" stroke-width="5" stroke-linecap="round"/>${active ? '<circle cx="160" cy="60" r="4" fill="#f0bf75"/>' : ""}`,
+            security: `<path d="M120 24l70 26v46q-5 40-70 66Q55 136 50 96V50z" fill="url(#body)" stroke="#777c86" stroke-width="3"/><path d="M120 46l46 17v31q-3 25-46 46-43-21-46-46V63z" fill="#242831"/><rect x="104" y="84" width="32" height="28" rx="5" fill="#8e929c"/><path d="M111 85v-10a9 9 0 0 1 18 0v10" fill="none" stroke="#c4c6cb" stroke-width="6"/>`,
+            media: `<path d="M42 40h154v87H42z" fill="url(#body)" stroke="#717783" stroke-width="3"/><rect x="53" y="49" width="132" height="67" rx="3" fill="${active ? '#496276' : '#141820'}"/><path d="M104 133h30l8 12H96z" fill="#3d424c"/><path d="M83 147h75" stroke="#777d87" stroke-width="7" stroke-linecap="round"/>`,
+            vacuum: `<ellipse cx="120" cy="111" rx="77" ry="42" fill="#13161d"/><ellipse cx="120" cy="102" rx="76" ry="40" fill="url(#body)" stroke="#8c9098" stroke-width="2"/><ellipse cx="120" cy="93" rx="42" ry="21" fill="#292d35"/><circle cx="120" cy="93" r="7" fill="${active ? '#e7b875' : '#838894'}"/><path d="M56 116q64 29 128 0" fill="none" stroke="#171a20" stroke-width="6"/>`,
+            energy: `<path d="M87 22h65l20 22v103H67V44z" fill="url(#body)" stroke="#8e929b" stroke-width="2"/><rect x="83" y="53" width="74" height="65" rx="6" fill="#1b1e25"/><path d="M130 62l-25 30h19l-11 20 30-34h-20z" fill="#e0b77a"/>`,
+            calendar: `<rect x="45" y="40" width="150" height="112" rx="12" fill="url(#body)" stroke="#848995" stroke-width="2"/><path d="M45 68h150" stroke="#171a20" stroke-width="14"/><path d="M79 31v23m82-23v23" stroke="#c4c5c9" stroke-width="9" stroke-linecap="round"/>${Array.from({ length: 12 }, (_, i) => `<rect x="${66 + (i % 4) * 30}" y="${83 + Math.floor(i / 4) * 20}" width="18" height="10" rx="3" fill="${i === 7 ? '#b99a70' : '#7e838d'}"/>`).join("")}`,
+            cameras: `<rect x="52" y="62" width="118" height="58" rx="16" fill="url(#body)" stroke="#7b8089" stroke-width="2"/><circle cx="110" cy="91" r="24" fill="#171a21" stroke="#969ba4" stroke-width="5"/><circle cx="110" cy="91" r="11" fill="#394c5c"/><path d="M171 73l28-19v73l-28-19" fill="#373c45"/><path d="M93 124v20h60" fill="none" stroke="#626873" stroke-width="8"/>`,
+            sensors: `<path d="M64 30h111v120H64z" fill="url(#body)" stroke="#8e939d" stroke-width="3"/><path d="M80 45h79v90H80z" fill="#3e5260" stroke="#a1a7b1" stroke-width="5"/><path d="M119 45v90M80 90h79" stroke="#a1a7b1" stroke-width="4"/><path d="M161 48l19 12v75l-19-2" fill="#262b35" stroke="#9ca0a8" stroke-width="3"/>`,
+            scenes: `<rect x="45" y="54" width="150" height="98" rx="13" fill="url(#body)"/><path d="M45 77h150M70 54l24 23m15-23 24 23m15-23 24 23" stroke="#17191e" stroke-width="12"/><path d="M106 95l39 19-39 20z" fill="#b99c77"/>`
+        };
+        return b `<svg class="living-object" viewBox="0 0 240 180" role="img" aria-label=${kind}>
+      <defs><linearGradient id="body" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#838893"/><stop offset=".3" stop-color="#494e59"/><stop offset=".7" stop-color="#292d36"/><stop offset="1" stop-color="#17191f"/></linearGradient></defs>
+      <ellipse cx="120" cy="161" rx="93" ry="9" fill="#17191d" opacity=".15"/>
+      <g .innerHTML=${art[kind] || art.scenes}></g>
+    </svg>`;
+    }
+    livingSection(title, kind, subtitle, domain, action) {
+        const entities = this.livingEntities(domain);
+        const active = entities.filter(e => e.state === "on" || e.state === "heating" || e.state === "playing").length;
+        return b `<article class="living-tile">
+      <button class="living-tile-head" @click=${() => this.livingPanel = this.livingPanel === kind ? "" : kind} aria-expanded=${this.livingPanel === kind}>
+        <span class="living-tile-title">${title}</span><span class="living-tile-chevron">${this.renderIcon("mdi:chevron-right")}</span>
+      </button>
+      <button class="living-tile-art" @click=${() => this.livingPanel = this.livingPanel === kind ? "" : kind} aria-label=${title}>
+        ${this.livingObject(kind, active > 0)}
+      </button>
+      <div class="living-tile-foot"><strong>${subtitle}</strong><span>${entities.length} Geräte ${active ? "· " + active + " aktiv" : ""}</span></div>
+      ${this.livingPanel === kind ? b `<div class="living-tile-controls">
+        ${entities.length ? entities.slice(0, 20).map(e => b `<div class="living-device"><span><strong>${this.livingName(e)}</strong><small>${e.state}</small></span>
+          ${["switch", "light", "fan", "input_boolean"].includes(domain) ? b `<button ?disabled=${!["on", "off"].includes(e.state)} @click=${() => this.livingAction(e)}>${this.renderIcon(e.state === "on" ? "mdi:toggle-switch" : "mdi:toggle-switch-off-outline")}</button>` : A}
+          ${domain === "cover" ? b `<button @click=${() => this.livingAction(e)}>${this.renderIcon(e.state === "open" ? "mdi:window-closed" : "mdi:window-open")}</button>` : A}
+          ${domain === "scene" ? b `<button title="Szene aktivieren" @click=${() => this.livingAction(e, "turn_on")}>${this.renderIcon("mdi:play")}</button>` : A}
+          ${domain === "media_player" ? b `<button title="Wiedergabe" @click=${() => this.livingAction(e, e.state === "playing" ? "media_pause" : "media_play")}>${this.renderIcon(e.state === "playing" ? "mdi:pause" : "mdi:play")}</button>` : A}
+          ${domain === "vacuum" ? b `<button @click=${() => this.livingAction(e, e.state === "cleaning" ? "return_to_base" : "start")}>${this.renderIcon(e.state === "cleaning" ? "mdi:home" : "mdi:play")}</button>` : A}
+          ${domain === "climate" ? b `<button @click=${() => this.livingAction(e, "set_temperature", { temperature: Math.max(5, Number(e.attributes.temperature || 20) - .5) })}>−</button><span>${String(e.attributes.temperature || "–")}°</span><button @click=${() => this.livingAction(e, "set_temperature", { temperature: Number(e.attributes.temperature || 20) + .5 })}>+</button>` : A}
+        </div>`) : b `<p class="living-muted">Keine Geräte verfügbar</p>`}
+      </div>` : A}
+    </article>`;
+    }
+    livingCalendar() {
+        const date = new Date();
+        const year = date.getFullYear(), month = date.getMonth() + this.livingCalendarOffset;
+        const first = new Date(year, month, 1), monthName = new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" }).format(first);
+        const start = (first.getDay() + 6) % 7, days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+        const events = this.livingEntities("calendar").filter(e => e.attributes.start_time || e.attributes.message);
+        return b `<section class="living-calendar">
+      <div class="living-calendar-head"><div><span class="living-eyebrow">DEIN KALENDER</span><h2>Kalender</h2></div>
+      <div class="living-calendar-nav"><button @click=${() => this.livingCalendarOffset--}>${this.renderIcon("mdi:chevron-left")}</button><strong>${monthName}</strong><button @click=${() => this.livingCalendarOffset++}>${this.renderIcon("mdi:chevron-right")}</button></div></div>
+      <div class="living-calendar-grid">${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => b `<span class="living-calendar-weekday">${d}</span>`)}
+      ${Array.from({ length: start }, () => b `<span></span>`)}
+      ${Array.from({ length: days }, (_, i) => { const n = i + 1, today = n === date.getDate() && first.getMonth() === date.getMonth() && first.getFullYear() === date.getFullYear(); return b `<span class="living-calendar-day ${today ? "today" : ""}">${n}</span>`; })}</div>
+      <div class="living-calendar-events"><strong>Nächste Termine</strong>
+        ${events.length ? events.slice(0, 6).map(e => b `<div class="living-event"><span>${String(e.attributes.message || this.livingName(e))}</span><small>${String(e.attributes.start_time || "")}</small></div>`) : b `<p class="living-muted">Keine Termine aus Kalender-Entitäten verfügbar.</p>`}
+      </div>
+    </section>`;
+    }
     renderHome() {
-        const cards = [
-            { key: "energy", icon: "mdi:lightning-bolt" },
-            { key: "rooms", icon: "mdi:floor-plan" },
-            { key: "climate", icon: "mdi:thermostat" },
-            { key: "security", icon: "mdi:shield-check-outline" }
-        ];
         const currentPerson = this.welcomeMode === "shared" ? undefined : this.getCurrentPerson();
-        const otherPeople = this.getPeople().filter(person => !currentPerson || person.entity_id !== currentPerson.entity_id);
         const greetingName = currentPerson ? this.getPersonName(currentPerson) : this.hass?.user?.name || "";
-        return b `
-      <section class="hero">
-        ${this.welcomeShowEyebrow ? b `<div class="eyebrow">${this.welcomeEyebrow || this.t("homeLabel")}</div>` : A}
-        <div class="hero-content">
-          <div class="hero-message">
-            ${this.welcomeShowGreeting ? b `<div class="welcome-title">
-              ${currentPerson ? this.renderPersonAvatar(currentPerson, true) : A}
-              <h1>${this.getGreeting()}${this.welcomeMode === "shared" ? "." : greetingName ? `, ${greetingName}` : "."}</h1>
-            </div>` : A}
-            ${this.welcomeShowSubtitle ? b `<p>${this.welcomeSubtitle || this.t("subtitle")}</p>` : A}
+        const lights = this.livingEntities("light"); lights.filter(e => e.state === "on").length;
+        return b `<section class="living-home">
+      <div class="living-intro"><span class="living-eyebrow">CONTROLROOM / LIVING SPACES</span><h1>${this.getGreeting()}${greetingName ? ", " + greetingName : ""}.</h1><p>Dein Zuhause. Intelligent, elegant, lebendig.</p></div>
+      <div class="living-home-grid">
+        <div class="living-primary">
+          <div class="living-lights-feature">${this.renderLightsCard()}</div>
+          <div class="living-categories">
+            ${this.livingSection("Heizung", "climate", "Klima & Temperatur", "climate")}
+            ${this.livingSection("Steckdosen", "sockets", "Schalter & Geräte", "switch")}
+            ${this.livingSection("Sicherheit", "security", "Alarm & Schutz", "alarm_control_panel")}
+            ${this.livingSection("Fenster & Türen", "sensors", "Öffnungen & Sensoren", "binary_sensor")}
+            ${this.livingSection("Medien", "media", "TV & Lautsprecher", "media_player")}
+            ${this.livingSection("Saugroboter", "vacuum", "Reinigung", "vacuum")}
+            ${this.livingSection("Energie", "energy", "Verbrauch & Leistung", "sensor")}
+            ${this.livingSection("Szenen", "scenes", "Deine Atmosphäre", "scene")}
           </div>
-          ${this.renderPeoplePills(otherPeople)}
         </div>
-      </section>
-
-      <section class="overview-grid">
-        ${cards.map((card) => b `
-            <article class="overview-card">
-              <div class="card-icon">
-                ${this.renderIcon(card.icon)}
-              </div>
-              <div>
-                <div class="card-title">${this.t(card.key)}</div>
-                <div class="card-subtitle">
-                  ${this.t("comingSoon")}
-                </div>
-              </div>
-            </article>
-          `)}
-        ${this.renderLightsCard()}
-      </section>
-    `;
+        <div class="living-secondary">
+          <section class="living-music"><div class="living-section-heading"><div><span class="living-eyebrow">CONTROLROOM MUSIC</span><h2>Deine Musik</h2></div>${this.renderIcon("mdi:music-note")}</div><div data-living-mount="music" class="living-music-mount"><p class="living-muted">ControlRoom Music Card wird geladen …</p></div></section>
+          ${this.livingCalendar()}
+          <section class="living-cameras"><div class="living-section-heading"><div><span class="living-eyebrow">LIVE-ANSICHT</span><h2>Kameras</h2></div><button @click=${() => this.activePage = "cameras"}>${this.renderIcon("mdi:arrow-top-right")}</button></div>
+            ${this.livingEntities("camera").length ? b `<div data-living-mount="camera0" class="living-camera-mount"></div>` : b `<p class="living-muted">Keine Kamera gefunden</p>`}
+          </section>
+        </div>
+      </div>
+    </section>`;
     }
     crThemeData() { return { theme: this.crTheme, style: this.crThemeStyle, source: "controlroom", haTheme: "", haMode: "auto" }; }
     crPalettes() {
@@ -2381,6 +2477,20 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
             return this.renderRoomsPage();
         if (this.activePage === "settings")
             return this.renderWelcomeSettings();
+        if (this.activePage === "calendar")
+            return b `<section class="living-full-page">${this.livingCalendar()}</section>`;
+        if (this.activePage === "cameras")
+            return b `<section class="living-full-page"><h1>Kameras</h1><div class="living-camera-grid">${this.livingEntities("camera").slice(0, 8).map((e, i) => b `<article class="living-camera-card"><h3>${this.livingName(e)}</h3><div data-living-mount=${"camera" + i}></div></article>`)}</div></section>`;
+        if (this.activePage === "media")
+            return b `<section class="living-full-page"><h1>Medien</h1><section class="living-music"><div data-living-mount="music"></div></section>${this.livingSection("Medien", "media", "Alle Player", "media_player")}</section>`;
+        if (this.activePage === "energy")
+            return b `<section class="living-full-page"><h1>Energie</h1>${this.livingSection("Energie", "energy", "Alle Sensoren", "sensor")}</section>`;
+        if (this.activePage === "security")
+            return b `<section class="living-full-page"><h1>Sicherheit</h1>${this.livingSection("Sicherheit", "security", "Alarm", "alarm_control_panel")}${this.livingSection("Fenster & Türen", "sensors", "Sensoren", "binary_sensor")}</section>`;
+        if (this.activePage === "devices")
+            return b `<section class="living-full-page"><h1>Geräte</h1><div class="living-categories">${this.livingSection("Steckdosen", "sockets", "Schalter", "switch")}${this.livingSection("Heizung", "climate", "Klima", "climate")}${this.livingSection("Saugroboter", "vacuum", "Reinigung", "vacuum")}${this.livingSection("Medien", "media", "Player", "media_player")}</div></section>`;
+        if (this.activePage === "automation")
+            return b `<section class="living-full-page"><h1>Automatisierung</h1>${this.livingSection("Szenen", "scenes", "Szenen", "scene")}</section>`;
         const page = pages.find((item) => item.id === this.activePage);
         return b `
       <section class="placeholder-page">
@@ -2430,6 +2540,48 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
     }
 };
 ControlRoomDashboard.styles = i$3 `
+    /* V54 Living Spaces: scope to new components, leave V53 lights and room art untouched */
+    .living-home,.living-full-page{padding:clamp(14px,2vw,30px);min-width:0;color:var(--cr-text)}
+    .living-intro{margin:0 0 25px}.living-eyebrow{font-size:10px;letter-spacing:2.1px;font-weight:800;opacity:.64}
+    .living-intro h1{font-size:clamp(27px,3vw,43px);letter-spacing:-1.3px;margin:8px 0}
+    .living-intro p{margin:0;color:var(--cr-muted);font-size:14px}
+    .living-home-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,.95fr);gap:22px;align-items:start}
+    .living-primary,.living-secondary{min-width:0;display:grid;gap:20px}
+    .living-lights-feature{min-width:0}
+    .living-categories{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .living-tile,.living-music,.living-calendar,.living-cameras,.living-camera-card{min-width:0;border-radius:22px;border:1px solid color-mix(in srgb,var(--cr-text) 12%,transparent);background:var(--cr-surface);overflow:hidden;box-shadow:0 8px 30px #00000009}
+    .living-tile-head{width:100%;padding:17px 18px 0;display:flex;justify-content:space-between;align-items:center;background:none;border:0;color:var(--cr-text);cursor:pointer;text-align:left}
+    .living-tile-title{font-weight:750;font-size:15px}.living-tile-chevron ha-icon{--mdc-icon-size:17px}
+    .living-tile-art{border:0;background:none;width:100%;padding:0 18px;display:grid;place-items:center;cursor:pointer}
+    .living-object{display:block;width:min(100%,235px);height:130px;overflow:visible;filter:drop-shadow(0 8px 7px #00000010)}
+    .living-tile-foot{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:0 18px 17px}
+    .living-tile-foot strong{font-size:11px;font-weight:650}.living-tile-foot span{font-size:11px;color:var(--cr-muted);text-align:right}
+    .living-tile-controls{padding:12px 15px 15px;border-top:1px solid color-mix(in srgb,var(--cr-text) 10%,transparent);display:grid;gap:7px}
+    .living-device{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 9px;background:color-mix(in srgb,var(--cr-bg) 65%,var(--cr-surface));border-radius:11px}
+    .living-device>span:first-child{flex:1;min-width:0;display:grid;gap:3px}.living-device strong{font-size:12px;overflow-wrap:anywhere}.living-device small{font-size:11px;color:var(--cr-muted)}
+    .living-device button,.living-calendar-nav button,.living-section-heading button{border:0;background:color-mix(in srgb,var(--cr-bg) 70%,var(--cr-surface));color:var(--cr-text);border-radius:9px;min-width:30px;min-height:30px;cursor:pointer}
+    .living-device button:disabled{opacity:.3;cursor:not-allowed}
+    .living-music,.living-calendar,.living-cameras{padding:19px}
+    .living-section-heading,.living-calendar-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px}
+    .living-section-heading h2,.living-calendar-head h2{font-size:20px;margin:5px 0 0}
+    .living-music-mount{min-height:180px}.living-muted{color:var(--cr-muted);font-size:12px;line-height:1.5}
+    .living-calendar-nav{display:flex;align-items:center;gap:6px}.living-calendar-nav strong{font-size:12px;min-width:105px;text-align:center}
+    .living-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+    .living-calendar-weekday{text-align:center;font-size:10px;font-weight:750;color:var(--cr-muted);padding:5px 0}
+    .living-calendar-day{display:grid;place-items:center;min-height:33px;font-size:12px;border-radius:9px}
+    .living-calendar-day.today{background:var(--cr-accent);color:var(--cr-bg);font-weight:800}
+    .living-calendar-events{border-top:1px solid color-mix(in srgb,var(--cr-text) 12%,transparent);margin-top:14px;padding-top:13px}
+    .living-calendar-events>strong{font-size:12px}.living-event{display:flex;justify-content:space-between;gap:8px;margin-top:9px;font-size:12px}
+    .living-event small{font-size:10px;color:var(--cr-muted)}
+    .living-camera-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:15px}
+    .living-camera-card{padding:16px}.living-camera-card h3{font-size:14px;margin:0 0 12px}
+    .living-full-page>h1{font-size:clamp(28px,3vw,40px)}
+    .living-full-page>.living-tile{max-width:800px;margin:14px 0}
+    @container (max-width:960px){.living-home-grid{grid-template-columns:1fr}.living-secondary{grid-template-columns:repeat(2,minmax(0,1fr))}.living-music{grid-column:1/-1}}
+    @container (max-width:560px){.living-categories,.living-secondary{grid-template-columns:1fr}.living-music{grid-column:auto}}
+    @media(max-width:900px){.living-home-grid{grid-template-columns:1fr}.living-secondary{grid-template-columns:1fr}}
+    @media(max-width:560px){.living-categories{grid-template-columns:1fr}.living-home,.living-full-page{padding:14px 10px}}
+
     /* ControlRoom Rooms Premium */
     .cr-rooms-page{padding:clamp(10px,2vw,26px) 0 45px;color:#f5eff9;min-width:0}
     .cr-room-kicker{font-size:10px;letter-spacing:2.4px;color:var(--cr-muted);font-weight:750}
@@ -4152,6 +4304,12 @@ __decorate([
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "activePage", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "livingPanel", void 0);
+__decorate([
+    r()
+], ControlRoomDashboard.prototype, "livingCalendarOffset", void 0);
 __decorate([
     r()
 ], ControlRoomDashboard.prototype, "mobileMenuOpen", void 0);
