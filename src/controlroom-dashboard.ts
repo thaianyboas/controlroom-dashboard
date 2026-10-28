@@ -625,7 +625,7 @@ export class ControlRoomDashboard extends LitElement {
     try {
       const saved=JSON.parse(localStorage.getItem("controlroom-theme-v1")||"{}");
       const standard=JSON.parse(localStorage.getItem("controlroom-theme-default-v1")||"{}");
-      this.crDefaultTheme=standard.theme||saved.theme||"purple";
+      this.crDefaultTheme=standard.theme||"purple";
       this.crDefaultStyle=(["glass","solid","minimal"].includes(standard.style)?standard.style:saved.style)||"glass";
       const migrateTheme=(id:string)=>{
         const match=/^signature-(\d+)$/.exec(id);
@@ -636,8 +636,8 @@ export class ControlRoomDashboard extends LitElement {
         return generated.length?generated[(Number(match[1])-1)%generated.length].id:"purple";
       };
       this.crDefaultTheme=migrateTheme(this.crDefaultTheme);
-      this.crTheme=this.crDefaultTheme;
-      this.crThemeStyle=this.crDefaultStyle;
+      this.crTheme=migrateTheme(saved.theme||this.crDefaultTheme);
+      this.crThemeStyle=(["glass","solid","minimal"].includes(saved.style)?saved.style:this.crDefaultStyle) as "glass" | "solid" | "minimal";
       this.crThemeSource="controlroom";this.crHATheme="";this.crHAMode="auto";
     }catch(error){console.warn("ControlRoom: unable to restore theme",error);}
     try { this.roomImages = JSON.parse(localStorage.getItem("controlroom-room-images-v1") || "{}"); } catch { this.roomImages = {}; }
@@ -1764,7 +1764,22 @@ export class ControlRoomDashboard extends LitElement {
     const themes=(this.hass as unknown as {themes?:{themes?:Record<string,unknown>}})?.themes?.themes;
     return themes?Object.keys(themes).sort((a,b)=>a.localeCompare(b)):[];
   }
-  private cancelCRTheme(){if(this.crThemeSnapshot){const v=JSON.parse(this.crThemeSnapshot);this.crTheme=v.theme;this.crThemeStyle=v.style;this.crThemeSource="controlroom";this.crHATheme="";this.crHAMode="auto";}this.settingsSection="overview";}
+  private cancelCRTheme(){
+    if(this.crThemeSnapshot){
+      const v=JSON.parse(this.crThemeSnapshot);
+      this.crTheme=v.theme;this.crThemeStyle=v.style;
+      this.crThemeSource="controlroom";this.crHATheme="";this.crHAMode="auto";
+      try{localStorage.setItem("controlroom-theme-v1",this.crThemeSnapshot);}catch(error){console.warn(error);}
+    }
+    this.crDefaultFeedback="";
+    this.settingsSection="overview";
+  }
+  private previewAndPersistCRTheme(){
+    try{localStorage.setItem("controlroom-theme-v1",JSON.stringify(this.crThemeData()));}
+    catch(error){console.warn("ControlRoom: theme preview could not be persisted",error);}
+    this.crDefaultFeedback="";
+    this.requestUpdate();
+  }
   private saveCRTheme(){
     try{localStorage.setItem("controlroom-theme-v1",JSON.stringify(this.crThemeData()));}catch(error){console.warn(error);}
     // External theme colors are applied locally; do not change the HA theme for other dashboards.
@@ -1780,7 +1795,7 @@ export class ControlRoomDashboard extends LitElement {
       this.crDefaultTheme=data.theme;
       this.crDefaultStyle=data.style;
       this.crThemeSnapshot=payload;
-      this.crDefaultFeedback="Standard gespeichert ✓";
+      this.crDefaultFeedback="Als Standard gespeichert ✓";
       this.requestUpdate();
     } catch(error) {
       this.crDefaultFeedback="Speichern fehlgeschlagen – Browser-Speicher prüfen";
@@ -1812,16 +1827,16 @@ export class ControlRoomDashboard extends LitElement {
     const selected=all.find(p=>p.id===this.crTheme)||all[0];
     return html`<div class="settings-center cr-theme-studio cr-theme-studio-v17">
       <div class="cr-atelier-heading"><button class="cr-atelier-back" type="button" title="Zurück zu Einstellungen" aria-label="Zurück zu Einstellungen" @click=${()=>this.cancelCRTheme()}>${this.renderIcon("mdi:arrow-left")}</button><div><div class="cr-room-kicker">CONTROLROOM · DESIGN COLLECTION</div><h2>Theme Atelier</h2><p>${all.length} Farbwelten · Dein persönlicher Look.</p></div></div>
-      <div class="cr-theme-current"><span class="cr-theme-current-swatch" style=${`background:linear-gradient(135deg,${selected.bg},${selected.surface} 58%,${selected.accent})`}></span><span><small>AKTUELLE AUSWAHL</small><strong>${selected.name}</strong><small>${this.crThemeStyle==="glass"?"Glass Premium":this.crThemeStyle==="solid"?"Modern Solid":"Minimal"}</small></span><button type="button" class="cr-current-default-button" @click=${()=>this.setCRThemeAsDefault()} aria-label="Dieses Design als Standard speichern">${this.renderIcon(this.crDefaultTheme===this.crTheme && this.crDefaultStyle===this.crThemeStyle?"mdi:star":"mdi:star-outline")}<span>${this.crDefaultTheme===this.crTheme && this.crDefaultStyle===this.crThemeStyle?"Standard":"Als Standard"}</span></button></div>
+      <div class="cr-theme-current"><span class="cr-theme-current-swatch" style=${`background:linear-gradient(135deg,${selected.bg},${selected.surface} 58%,${selected.accent})`}></span><span><small>AKTUELLE AUSWAHL</small><strong>${selected.name}</strong><small>${this.crThemeStyle==="glass"?"Glass Premium":this.crThemeStyle==="solid"?"Modern Solid":"Minimal"}</small></span><span class="cr-current-default-indicator">${this.crDefaultTheme===this.crTheme && this.crDefaultStyle===this.crThemeStyle?html`★ Standard`:nothing}</span></div>
       ${this.crDefaultFeedback?html`<div class="cr-default-feedback" role="status">${this.crDefaultFeedback}</div>`:nothing}
-      <section class="cr-style-gallery" aria-label="Visual Style"><div class="cr-style-gallery-head"><span class="cr-room-kicker">OBERFLÄCHEN · LIVE-VORSCHAU</span><h3>Visual Style</h3><p>Wähle die Oberfläche – die Vorschau übernimmt deine aktuelle Farbwelt.</p></div><div class="cr-theme-style-list">${([['glass','Glass Premium','Transparenz und weiche Glaseffekte'],['solid','Modern Solid','Klare, elegante Oberflächen'],['minimal','Minimal','Reduziert und kompakt']] as const).map(([id,title,desc])=>html`<button type="button" class="cr-style-option ${id} ${this.crThemeStyle===id?'chosen':''}" aria-pressed=${this.crThemeStyle===id?'true':'false'} @click=${()=>{this.crThemeStyle=id;this.crDefaultFeedback="";this.requestUpdate();}}><span class="cr-style-scene"><span class="cr-style-scene-header"><i></i><i></i><i></i></span><span class="cr-style-scene-body"><span class="cr-style-scene-main"><i></i><i></i><i></i></span><span class="cr-style-scene-side"><i></i><i></i></span></span></span><span class="cr-style-option-info"><strong>${title}</strong><small>${desc}</small></span>${this.crThemeStyle===id?html`<span class="cr-style-selected">${this.renderIcon("mdi:check-circle")}</span>`:nothing}</button>`)}</div></section>
+      <section class="cr-style-gallery" aria-label="Visual Style"><div class="cr-style-gallery-head"><span class="cr-room-kicker">OBERFLÄCHEN · LIVE-VORSCHAU</span><h3>Visual Style</h3><p>Wähle die Oberfläche – die Vorschau übernimmt deine aktuelle Farbwelt.</p></div><div class="cr-theme-style-list">${([['glass','Glass Premium','Transparenz und weiche Glaseffekte'],['solid','Modern Solid','Klare, elegante Oberflächen'],['minimal','Minimal','Reduziert und kompakt']] as const).map(([id,title,desc])=>html`<button type="button" class="cr-style-option ${id} ${this.crThemeStyle===id?'chosen':''}" aria-pressed=${this.crThemeStyle===id?'true':'false'} @click=${()=>{this.crThemeStyle=id;this.previewAndPersistCRTheme();}}><span class="cr-style-scene"><span class="cr-style-scene-header"><i></i><i></i><i></i></span><span class="cr-style-scene-body"><span class="cr-style-scene-main"><i></i><i></i><i></i></span><span class="cr-style-scene-side"><i></i><i></i></span></span></span><span class="cr-style-option-info"><strong>${title}</strong><small>${desc}</small></span>${this.crThemeStyle===id?html`<span class="cr-style-selected">${this.renderIcon("mdi:check-circle")}</span>`:nothing}</button>`)}</div></section>
       <div class="cr-theme-tools"><label class="cr-theme-search">${this.renderIcon("mdi:magnify")}<input type="search" placeholder="Farbwelt suchen …" .value=${this.crThemeSearch} @input=${(e:Event)=>{this.crThemeSearch=(e.target as HTMLInputElement).value;this.crThemePage=0;}} /></label><div class="cr-theme-filters">${([['all','Alle'],['favorites','Klassiker'],['dark','Dunkel'],['light','Hell']] as const).map(([id,name])=>html`<button class=${this.crThemeFilter===id?'active':''} @click=${()=>{this.crThemeFilter=id;this.crThemePage=0;}}>${name}</button>`)}</div></div>
       <div class="cr-theme-collection-heading"><h3>Farbwelten</h3><span>${filtered.length} Designs · Seite ${page+1} / ${pages}</span></div>
-      <div class="cr-theme-grid">${visible.map(p=>html`<button class="cr-theme-choice ${this.crTheme===p.id?'chosen':''}" @click=${()=>{this.crTheme=p.id;this.crThemeSource="controlroom";this.crDefaultFeedback="";this.requestUpdate();}}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface};color:${p.text}`}></i><i style=${`background:${p.surface};color:${p.text}`}></i><em class="cr-theme-sample-text" style=${`color:${p.text}`}>Aa</em><b class="cr-theme-sample-action" style=${`background:${p.accent};border:1px solid ${p.text}55`}></b></span><strong>${p.name}</strong>${this.crTheme===p.id?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
+      <div class="cr-theme-grid">${visible.map(p=>html`<button class="cr-theme-choice ${this.crTheme===p.id?'chosen':''}" @click=${()=>{this.crTheme=p.id;this.crThemeSource="controlroom";this.previewAndPersistCRTheme();}}><span class="cr-theme-preview" style=${`background:${p.bg};color:${p.text}`}><span style=${`background:${p.accent}`}></span><i style=${`background:${p.surface};color:${p.text}`}></i><i style=${`background:${p.surface};color:${p.text}`}></i><em class="cr-theme-sample-text" style=${`color:${p.text}`}>Aa</em><b class="cr-theme-sample-action" style=${`background:${p.accent};border:1px solid ${p.text}55`}></b></span><strong>${p.name}</strong>${this.crTheme===p.id?this.renderIcon("mdi:check-circle"):nothing}</button>`)}</div>
       ${filtered.length===0?html`<p class="settings-note">Keine Farbwelt gefunden. Probiere einen anderen Suchbegriff.</p>`:nothing}
       ${pages>1?html`<nav class="cr-theme-pagination" aria-label="Farbwelten Seiten"><button class="cr-page-nav cr-atelier-page-button" ?disabled=${page===0} @click=${()=>{this.crThemePage=Math.max(0,page-1);}}><span>Zurück</span></button><div class="cr-page-center"><span class="cr-page-eyebrow">KOLLEKTION</span><label class="cr-page-select"><select aria-label="Seite auswählen" .value=${String(page)} @change=${(e:Event)=>{this.crThemePage=Number((e.target as HTMLSelectElement).value);}}>${Array.from({length:pages},(_,i)=>html`<option value=${String(i)}>Seite ${i+1} / ${pages}</option>`)}</select>${this.renderIcon("mdi:chevron-down")}</label><div class="cr-page-progress"><span style=${`width:${((page+1)/pages)*100}%`}></span></div></div><button class="cr-page-nav cr-atelier-page-button" ?disabled=${page>=pages-1} @click=${()=>{this.crThemePage=Math.min(pages-1,page+1);}}><span>Weiter</span></button></nav>`:nothing}
 
-      <div class="cr-theme-actions"><span class="cr-theme-action-caption">${selected.name}${this.crDefaultTheme===this.crTheme && this.crDefaultStyle===this.crThemeStyle?" · Standard":""}</span><button type="button" class="cr-set-default" @click=${()=>this.setCRThemeAsDefault()}>${this.renderIcon("mdi:star-outline")} Als Standard festlegen</button><button @click=${()=>this.cancelCRTheme()}>Abbrechen</button><button @click=${()=>this.saveCRTheme()}>Speichern</button></div>
+      <div class="cr-theme-actions"><span class="cr-theme-action-caption">${selected.name}${this.crDefaultTheme===this.crTheme && this.crDefaultStyle===this.crThemeStyle?" · Standard":""}</span><button type="button" class="cr-set-default" @click=${()=>this.setCRThemeAsDefault()}>${this.renderIcon(this.crDefaultTheme===this.crTheme && this.crDefaultStyle===this.crThemeStyle?"mdi:star":"mdi:star-outline")} ${this.crDefaultTheme===this.crTheme && this.crDefaultStyle===this.crThemeStyle?"Als Standard gespeichert":"Als Standard festlegen"}</button><button @click=${()=>this.cancelCRTheme()}>Abbrechen</button><button @click=${()=>this.saveCRTheme()}>Speichern</button></div>
     </div>`;
   }
 
@@ -3538,3 +3553,4 @@ if (
     preview: true
   });
 }
+
