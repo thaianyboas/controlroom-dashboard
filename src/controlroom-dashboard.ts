@@ -1978,14 +1978,42 @@ export class ControlRoomDashboard extends LitElement {
     </div>`;
   }
 
-  private lightingDiorama(name:string, illuminated=false) {
-    const normalized=name.trim().toLocaleLowerCase('de-DE');
-    const unknown=!normalized || /^(ohne raum|unassigned|unknown|sem ambiente|no room)$/.test(normalized);
-    const kind=unknown ? 'flur' : this.roomKind(name);
-    const fallback=this.roomKind(name.replace(/raum$/i,'zimmer'));
-    const images=illuminated ? LIGHT_ROOM_DIORAMAS : LIGHT_ROOM_DIORAMAS_OFF;
-    const art=images[kind] || images[fallback] || images.flur;
-    return html`<img class="cr-light-diorama" src=${art} alt="" loading="lazy" decoding="async" />`;
+  // V40: Render transparent vector objects, exactly like the main pendant.
+  // All lighting is a separate SVG layer driven by the actual HA light state.
+  private lightingDiorama(name: string, illuminated = false) {
+    const kind = /^(ohne raum|unassigned|unknown|sem ambiente|no room)$/i.test(name.trim()) ? "generic" : this.roomKind(name);
+    const safeId = `cr-light-scene-${kind.replace(/[^a-z0-9]/g, "")}`;
+    const lamp = (x:number,y:number,scale=1) => html`<g transform=${`translate(${x} ${y}) scale(${scale})`}>
+      <path d="M0 -53V-8" stroke="#4b4b48" stroke-width="2"/>
+      <path d="M-24 0Q-20-20 0-22Q20-20 24 0Z" fill="url(#${safeId}-metal)" stroke="#5d605c" stroke-width="1.2"/>
+      <ellipse cx="0" cy="0" rx="23" ry="4.2" fill="#2c2d2b"/>
+      ${illuminated?html`<ellipse cx="0" cy="1" rx="17" ry="2.7" fill="#fff0cb"/><ellipse cx="0" cy="25" rx="49" ry="37" fill=${`url(#${safeId}-glow)`}/>`:nothing}
+    </g>`;
+    const plant = html`<g><path d="M33 127q-24-32-12-50 20 10 12 50M33 127q8-48 33-45 4 30-33 45M33 127q-13-35-33-25 4 23 33 25" fill="#536b50"/><path d="M19 126h29l-4 27H24z" fill="url(#${safeId}-wood)"/></g>`;
+    const scenes: Record<string,unknown> = {
+      badezimmer: html`<g>${plant}<rect x="68" y="110" width="191" height="13" rx="3" fill="url(#${safeId}-stone)"/><rect x="75" y="123" width="176" height="37" rx="3" fill="url(#${safeId}-wood)"/><path d="M163 124v36" stroke="#514c43" opacity=".55"/><ellipse cx="166" cy="110" rx="48" ry="11" fill="#e1d9c8"/><ellipse cx="166" cy="108" rx="33" ry="6" fill="#a8a9a2"/><path d="M165 106V91q0-9 9-9t9 9" fill="none" stroke="#a98f6e" stroke-width="4"/><circle cx="166" cy="52" r="45" fill="#171c1c" stroke=${illuminated?'#f6dfb2':'#807b70'} stroke-width="6"/><circle cx="166" cy="52" r="39" fill="#293534"/><path d="M142 27q22-13 44 1" stroke="#f8f4e7" opacity=".13" stroke-width="3" fill="none"/>${illuminated?html`<circle cx="166" cy="52" r="45" fill="none" stroke="#fff0cf" stroke-width="6" filter=${`url(#${safeId}-halo)`}/>`:nothing}<path d="M276 66v85" stroke="#a18c71" stroke-width="5"/><path d="M278 81h23v58h-23" fill="#c5b9a4"/><rect x="224" y="96" width="11" height="15" rx="2" fill="#d3c1a4"/></g>`,
+      kuche: html`<g><rect x="40" y="102" width="249" height="55" rx="4" fill="url(#${safeId}-wood)"/><rect x="34" y="95" width="263" height="13" rx="3" fill="url(#${safeId}-stone)"/><path d="M128 110v46m65-46v46" stroke="#4a4841" opacity=".6"/><path d="M126 100v-14q0-8 9-8t9 8" stroke="#c2a27a" stroke-width="4" fill="none"/><ellipse cx="136" cy="99" rx="18" ry="3" fill="#a7a79d"/><path d="M238 94h48q-3 23-24 23t-24-23" fill="#8b7052"/><circle cx="253" cy="92" r="8" fill="#c09a57"/><circle cx="270" cy="91" r="7" fill="#d3ae64"/>${lamp(92,57,.73)}${lamp(165,57,.73)}${lamp(238,57,.73)}</g>`,
+      wohnzimmer: html`<g>${plant}<path d="M73 110q0-25 25-25h133q25 0 25 25v40H73z" fill="url(#${safeId}-wood)"/><rect x="80" y="100" width="169" height="48" rx="13" fill="#b5a78f"/><rect x="88" y="105" width="74" height="33" rx="10" fill="#d4c6aa"/><rect x="168" y="105" width="73" height="33" rx="10" fill="#c9bba0"/><path d="M72 123q-14-5-14 10v16q0 11 13 11h185q13 0 13-11v-17q0-14-14-9v26H72z" fill="#968975"/><path d="M84 160v7m166-7v7" stroke="#625240" stroke-width="5"/><path d="M191 115l27-7 13 27-30 5z" fill="#754e50"/><ellipse cx="164" cy="157" rx="46" ry="10" fill="#886344"/><path d="M138 160v8m51-8v8" stroke="#624a38" stroke-width="5"/><path d="M290 154V65q0-48-45-48" stroke="#272a2b" stroke-width="5" fill="none"/><path d="M221 48q19-34 39 0z" fill="url(#${safeId}-metal)"/><ellipse cx="240" cy="48" rx="19" ry="4" fill=${illuminated?'#f8e8c7':'#303333'}/>${illuminated?html`<ellipse cx="240" cy="78" rx="70" ry="60" fill=${`url(#${safeId}-glow)`}/>`:nothing}</g>`,
+      schlafzimmer: html`<g><rect x="66" y="72" width="199" height="74" rx="11" fill="url(#${safeId}-wood)"/><rect x="73" y="96" width="185" height="62" rx="10" fill="#c8baa5"/><rect x="81" y="92" width="78" height="28" rx="9" fill="#e5d9c4"/><rect x="170" y="92" width="78" height="28" rx="9" fill="#e1d5c0"/><path d="M87 112l49-6 11 23-54 7zm110 0 49-5 10 25-52 5z" fill="#895b55"/><path d="M76 131q93 20 182 0v26H76z" fill="#8c9a8c"/><rect x="30" y="113" width="37" height="42" rx="3" fill="url(#${safeId}-wood)"/><rect x="267" y="113" width="37" height="42" rx="3" fill="url(#${safeId}-wood)"/>${lamp(48,108,.45)}${lamp(286,108,.45)}</g>`,
+      controlraum: html`<g><rect x="15" y="40" width="72" height="113" rx="4" fill="url(#${safeId}-metal)" stroke="#70756f"/><rect x="24" y="51" width="54" height="43" rx="3" fill="#a1a9a0"/><path d="M28 66h46m-46 10h46" stroke="#4c5750" stroke-width="2"/><path d="M42 54l-10 22h20z" fill="#d4b55e"/><rect x="104" y="30" width="89" height="133" rx="4" fill="#1d2426" stroke="#77817b" stroke-width="3"/>${Array.from({length:9},(_,i)=>html`<rect x="114" y=${40+i*12} width="69" height="8" rx="1" fill="#343e41"/><circle cx="174" cy=${44+i*12} r="1.7" fill="#6fa9a1"/>`)}<path d="M4 22h308M4 35h94M204 23h108" stroke="#a96748" stroke-width="5" fill="none"/><path d="M5 32h88m108 4h112" stroke="#4c8590" stroke-width="5" fill="none"/><path d="M55 25v16m220-18v44" stroke="#a96748" stroke-width="5"/><rect x="211" y="64" width="100" height="72" rx="4" fill="#1d2e32" stroke="#627b7a"/><path d="M223 123V77h75v46z" fill="#16313a"/><path d="M235 99l24-19 24 19v21h-48z" stroke="#77a9a4" fill="none" stroke-width="2"/><path d="M245 110h27" stroke="#77a9a4"/><rect x="226" y="143" width="77" height="17" rx="3" fill="url(#${safeId}-stone)"/></g>`,
+      esszimmer: html`<g>${plant}<ellipse cx="164" cy="124" rx="102" ry="23" fill="url(#${safeId}-wood)"/><path d="M164 138v28m-36 0h72" stroke="#765640" stroke-width="8"/><path d="M82 122v39m164-39v39" stroke="#9e8d75" stroke-width="9"/><path d="M60 120q16-25 43 0m121 0q22-25 43 0" fill="#a99b83"/>${lamp(164,65,1.05)}</g>`,
+      flur: html`<g>${plant}<rect x="72" y="119" width="205" height="13" rx="3" fill="url(#${safeId}-wood)"/><path d="M91 132v32m166-32v32" stroke="#79604a" stroke-width="6"/><circle cx="174" cy="66" r="43" fill="#222c2a" stroke="#9f9279" stroke-width="5"/><path d="M150 42q25-13 46 2" stroke="#fff" opacity=".14" fill="none"/><path d="M236 106h14v13h-14" fill="#c9b9a1"/>${lamp(274,83,.52)}</g>`,
+      balkon: html`<g><path d="M15 113h302m-290 0v50m43-50v50m43-50v50m43-50v50m43-50v50m43-50v50m43-50v50" stroke="#848a7f" stroke-width="4"/><path d="M104 113q16-47 70-29l-10 61h-65z" fill="#b7a58b"/><path d="M105 147v17m56-17v17" stroke="#765e4c" stroke-width="6"/>${plant}<rect x="216" y="129" width="49" height="8" rx="3" fill="#987355"/><path d="M240 137v26" stroke="#7a5c43" stroke-width="5"/><rect x="224" y="108" width="24" height="22" rx="3" fill="#3e4240" stroke="#b2a88c"/>${illuminated?html`<ellipse cx="236" cy="117" rx="55" ry="45" fill=${`url(#${safeId}-glow)`}/>`:nothing}</g>`
+    };
+    const art=scenes[kind]||html`<g>${plant}<path d="M100 101l65-58 65 58v57H100z" fill="url(#${safeId}-wood)"/><rect x="146" y="116" width="38" height="42" fill="#55574f"/>${lamp(166,84,.48)}</g>`;
+    return html`<svg class="cr-room-illustration cr-light-object" viewBox="0 0 330 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      <defs>
+        <linearGradient id=${`${safeId}-metal`} x1="0" y1="0" x2="1" y2="1"><stop stop-color="#636967"/><stop offset=".48" stop-color="#161b1e"/><stop offset="1" stop-color="#353c3c"/></linearGradient>
+        <linearGradient id=${`${safeId}-wood`} x1="0" y1="0" x2=".9" y2="1"><stop stop-color="#b3a38b"/><stop offset=".55" stop-color="#82725f"/><stop offset="1" stop-color="#544c41"/></linearGradient>
+        <linearGradient id=${`${safeId}-stone`} x1="0" y1="0" x2="0" y2="1"><stop stop-color="#e6e0d0"/><stop offset="1" stop-color="#999a90"/></linearGradient>
+        <radialGradient id=${`${safeId}-glow`}><stop stop-color="#fff0cc" stop-opacity=".48"/><stop offset="1" stop-color="#fff0cc" stop-opacity="0"/></radialGradient>
+        <filter id=${`${safeId}-halo`} x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="4"/></filter>
+        <filter id=${`${safeId}-shadow`} x="-25%" y="-40%" width="150%" height="180%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000" flood-opacity=".34"/></filter>
+      </defs>
+      <ellipse cx="166" cy="164" rx="135" ry="9" fill="#000" opacity=".15"/>
+      <g filter=${`url(#${safeId}-shadow)`}>${art}</g>
+      ${illuminated?html`<ellipse cx="165" cy="103" rx="155" ry="95" fill=${`url(#${safeId}-glow)`} opacity=".32"/>`:nothing}
+    </svg>`;
   }
 
   private roomKind(name: string): string {
@@ -2749,32 +2777,17 @@ export class ControlRoomDashboard extends LitElement {
     .dashboard .ambient-room-status.is-on{background:var(--cr-accent);box-shadow:0 0 10px var(--cr-accent)}
     @media(max-width:520px){.dashboard .ambient-rooms{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.dashboard .ambient-room{min-height:165px}.dashboard .ambient-room-art{height:110px}.dashboard .ambient-room-details{padding:10px 11px 12px}}
     @media(prefers-reduced-motion:reduce){.dashboard .ambient-room{transition:none}.dashboard .ambient-room-art .cr-room-illustration-light{transition:none}}
-    /* V38: original premium rendered dioramas; text and state remain native and live. */
-    .dashboard .ambient-rooms{grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:16px}
-    .dashboard .ambient-room{min-height:228px;border-radius:21px;overflow:hidden;background:#15271f;border:1px solid rgba(220,223,188,.23);box-shadow:inset 0 1px rgba(255,255,255,.04)}
-    .dashboard .ambient-room-art{height:175px;background:#172b22;display:block;overflow:hidden;isolation:isolate}
-    .dashboard .ambient-room-art::after{content:"";position:absolute;inset:35% 0 0;pointer-events:none;background:linear-gradient(to bottom,transparent 5%,rgba(11,27,21,.24) 65%,rgba(11,27,21,.82) 100%);z-index:2}
-    .dashboard .ambient-room-art .cr-light-diorama{display:block;width:100%;height:100%;object-fit:cover;object-position:center;filter:saturate(.92) brightness(.87);transition:filter .35s ease,transform .35s ease}
-    .dashboard .ambient-room.illuminated .cr-light-diorama{filter:saturate(1.05) brightness(1.06)}
-    .dashboard .ambient-room:hover .cr-light-diorama{transform:scale(1.045)}
+    /* V40: theme-native transparent 3D SVG objects, matching the pendant's technique. */
+    .dashboard .ambient-rooms{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px;margin-top:14px}
+    .dashboard .ambient-room{min-width:0;min-height:0;overflow:hidden;border-radius:16px;background:color-mix(in srgb,var(--cr-surface) 94%,var(--cr-bg));border:1px solid color-mix(in srgb,var(--cr-text) 17%,transparent);box-shadow:none;transition:border-color .25s,transform .25s,box-shadow .25s}
+    .dashboard .ambient-room-art{height:auto;aspect-ratio:1.85/1;min-height:0;display:grid;place-items:center;background:transparent;overflow:hidden}
+    .dashboard .ambient-room-art::after{content:none}
+    .dashboard .ambient-room-art .cr-light-object{display:block;width:100%;height:100%;max-width:none;max-height:none;overflow:visible;pointer-events:none}
     .dashboard .ambient-room-glow{opacity:0!important}
-    .dashboard .ambient-room-details{background:#14281f;border-top:0;padding:12px 15px 15px;gap:6px}
-    .dashboard .ambient-room-name{font-size:calc(15px * var(--cr-font-scale,1));font-weight:700}
-    .dashboard .ambient-room-count{font-size:calc(12px * var(--cr-font-scale,1))}
-    @media(max-width:520px){.dashboard .ambient-rooms{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dashboard .ambient-room{min-height:184px}.dashboard .ambient-room-art{height:119px}.dashboard .ambient-room-details{padding:10px 11px 12px}}
-    @media(prefers-reduced-motion:reduce){.dashboard .ambient-room-art .cr-light-diorama{transition:none}}
-
-    /* V39: compact responsive lighting cards, real OFF/ON image switching. */
-    .dashboard .ambient-rooms{grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:14px}
-    .dashboard .ambient-room{min-width:0;min-height:0;border-radius:15px;overflow:hidden;box-shadow:none}
-    .dashboard .ambient-room-art{height:auto;aspect-ratio:1.85/1;min-height:0}
-    .dashboard .ambient-room-art .cr-light-diorama{filter:none;transform:none}
-    .dashboard .ambient-room.illuminated .cr-light-diorama{filter:none}
-    .dashboard .ambient-room-art::after{inset:52% 0 0;background:linear-gradient(transparent,rgba(9,25,20,.36))}
-    .dashboard .ambient-room-details{padding:9px 11px 10px;gap:4px}
-    .dashboard .ambient-room-name{font-size:calc(12px * var(--cr-font-scale,1));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .dashboard .ambient-room-count{font-size:calc(10px * var(--cr-font-scale,1))}
-    .dashboard .ambient-room.illuminated{border-color:rgba(239,221,172,.44);box-shadow:0 0 18px rgba(255,231,182,.055)}
+    .dashboard .ambient-room.illuminated{border-color:color-mix(in srgb,var(--cr-accent) 32%,transparent);box-shadow:inset 0 0 18px rgba(255,240,204,.035)}
+    .dashboard .ambient-room-details{background:transparent;border-top:1px solid color-mix(in srgb,var(--cr-text) 8%,transparent);padding:8px 11px 10px;gap:4px}
+    .dashboard .ambient-room-name{font-size:calc(12px * var(--cr-font-scale,1));color:var(--cr-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dashboard .ambient-room-count{font-size:calc(10px * var(--cr-font-scale,1));color:var(--cr-muted)}
     @media(max-width:1100px){.dashboard .ambient-rooms{grid-template-columns:repeat(4,minmax(0,1fr))}}
     @media(max-width:850px){.dashboard .ambient-rooms{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media(max-width:540px){.dashboard .ambient-rooms{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.dashboard .ambient-room-art{aspect-ratio:1.7/1}.dashboard .ambient-room-details{padding:8px 9px 9px}}
