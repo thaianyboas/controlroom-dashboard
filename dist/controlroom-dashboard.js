@@ -2206,29 +2206,25 @@ let ControlRoomDashboard = class ControlRoomDashboard extends i {
         const icons = { wohnzimmer: "mdi:sofa-outline", schlafzimmer: "mdi:bed-king-outline", kuche: "mdi:chef-hat", badezimmer: "mdi:bathtub-outline", esszimmer: "mdi:table-furniture", balkon: "mdi:flower-outline", flur: "mdi:door-open", buro: "mdi:desk", garage: "mdi:garage-variant", keller: "mdi:archive-outline", waschkuche: "mdi:washing-machine", hobbyraum: "mdi:controller-classic-outline", controlraum: "mdi:server-network", pool: "mdi:pool", garten: "mdi:flower-outline", pooltechnik: "mdi:pump", heizungsraum: "mdi:radiator", solartechnik: "mdi:solar-power", terrasse: "mdi:flower-outline", wintergarten: "mdi:greenhouse", gastezimmer: "mdi:bed-outline", kinderzimmer: "mdi:teddy-bear", fitnessraum: "mdi:dumbbell", generic: "mdi:home-outline" };
         return icons[this.roomKind(name)];
     }
+    // V35: original, lightweight vector interiors. No external images or network requests.
     roomArt(areaId, name) {
-        const own = this.roomImages[areaId];
-        const mode = this.roomStyleByArea[areaId] || this.roomStyle;
-        const automatic = this.roomAutoSwitch && !this.roomStyleByArea[areaId] && mode !== "custom";
-        const selected = automatic && Math.floor(this.currentTime.getTime() / 86400000) % 2 === 1 ? (mode === "3d" ? "photos" : "3d") : mode;
         const kind = this.roomKind(name);
-        const fallback = `/local/controlroom-dashboard/Rooms_Assets/rooms/${kind}.webp`;
-        const genericFallback = `/local/controlroom-dashboard/Rooms_Assets/rooms/wohnzimmer.webp`;
-        const photoKinds = { pooltechnik: "heizungsraum", solartechnik: "controlraum", wintergarten: "terrasse", generic: "wohnzimmer", esszimmer: "esszimmer" };
-        const photoKind = photoKinds[kind] || kind;
-        const premiumPhoto = `/local/controlroom-dashboard/Premium-Fotos/controlroom-premium-fotos/${photoKind}.webp`;
-        const image = selected === "custom" ? (own || fallback) : selected === "photos" ? (this.roomPhotoUrls[kind] || premiumPhoto) : fallback;
-        return image ? b `<img class=${selected === "3d" ? "cr-art-3d" : "cr-art-photo"} src=${image} alt=${name} loading="lazy" @error=${(e) => { const el = e.target; if (el.dataset.fallbackStep === "2") {
-            el.style.display = "none";
-        }
-        else if (el.dataset.fallbackStep === "1") {
-            el.dataset.fallbackStep = "2";
-            el.src = genericFallback;
-        }
-        else {
-            el.dataset.fallbackStep = "1";
-            el.src = fallback;
-        } }}/>${this.renderIcon(this.roomIcon(name))}` : this.renderIcon(this.roomIcon(name));
+        const interiors = {
+            wohnzimmer: `<path d="M65 120h195v39H65z" fill="#716d5b"/><rect x="78" y="89" width="164" height="53" rx="13" fill="#a99b7e"/><rect x="89" y="99" width="65" height="36" rx="8" fill="#c3b69a"/><rect x="164" y="99" width="65" height="36" rx="8" fill="#c3b69a"/><path d="M79 135v17m161-17v17" stroke="#5c4e43" stroke-width="7"/><path d="M280 56v84" stroke="#b4a18a" stroke-width="5"/><path d="M263 74q18-32 35 0z" fill="#302f31"/><ellipse cx="280" cy="76" rx="19" ry="4" fill="#ffdda1"/><path d="M29 144v-40" stroke="#7d6753" stroke-width="6"/><path d="M29 109q-37-19-12-42 25 6 12 42m0 0q6-42 31-38 10 28-31 38" fill="#657d55"/><rect x="14" y="137" width="31" height="25" rx="5" fill="#98816c"/><rect x="121" y="148" width="78" height="9" rx="5" fill="#6d5342"/>`,
+            badezimmer: `<rect x="71" y="106" width="176" height="54" rx="7" fill="#8d8274"/><rect x="82" y="114" width="155" height="15" rx="7" fill="#d7cdbb"/><path d="M157 119v-19q0-11 10-11t10 11" stroke="#d4c3a3" stroke-width="5" fill="none"/><circle cx="165" cy="67" r="42" fill="#272c2a" stroke="#b9a17a" stroke-width="5"/><circle cx="165" cy="67" r="35" fill="#7e897f" opacity=".27"/><path d="M265 65v86" stroke="#bba98f" stroke-width="5"/><path d="M265 79h28v54h-28" fill="#d5c8ad"/><rect x="34" y="142" width="34" height="24" rx="5" fill="#9a8570"/><path d="M50 143q-30-30-8-50 22 18 8 50m0 0q5-37 26-34 8 22-26 34" fill="#657f5e"/>`,
+            schlafzimmer: `<rect x="58" y="78" width="204" height="67" rx="12" fill="#756759"/><rect x="66" y="104" width="190" height="50" rx="9" fill="#c2b19b"/><rect x="72" y="98" width="80" height="27" rx="9" fill="#eee0c5"/><rect x="164" y="98" width="80" height="27" rx="9" fill="#eee0c5"/><path d="M67 149v13m186-13v13" stroke="#56483d" stroke-width="7"/><rect x="15" y="122" width="38" height="29" rx="3" fill="#7a6552"/><rect x="270" y="122" width="38" height="29" rx="3" fill="#7a6552"/><path d="M34 119V88m254 31V88" stroke="#c0a88a" stroke-width="4"/><path d="M18 91q16-28 32 0zm254 0q16-28 32 0z" fill="#3e3b39"/><ellipse cx="34" cy="93" rx="16" ry="4" fill="#f9d79e"/><ellipse cx="288" cy="93" rx="16" ry="4" fill="#f9d79e"/>`,
+            kuche: `<rect x="24" y="88" width="273" height="70" rx="5" fill="#64665b"/><rect x="24" y="88" width="273" height="12" rx="3" fill="#c7b9a3"/><path d="M94 103v53m85-53v53m-85-27h85m0-27v53" stroke="#999483" stroke-width="2"/><rect x="75" y="118" width="65" height="35" rx="2" fill="#494b45"/><path d="M102 23v35m108-35v35" stroke="#b6a994" stroke-width="3"/><path d="M78 68q24-38 48 0zm108 0q24-38 48 0z" fill="#343536"/><ellipse cx="102" cy="69" rx="24" ry="5" fill="#f9d79e"/><ellipse cx="210" cy="69" rx="24" ry="5" fill="#f9d79e"/><rect x="252" y="71" width="23" height="17" rx="3" fill="#a69b83"/>`,
+            esszimmer: `<ellipse cx="164" cy="120" rx="100" ry="21" fill="#8e6b51"/><path d="M157 131v35m-34 0h70" stroke="#79563f" stroke-width="9"/><path d="M164 17v38" stroke="#aea39a" stroke-width="3"/><path d="M126 73q38-56 76 0z" fill="#393a39"/><ellipse cx="164" cy="74" rx="38" ry="7" fill="#ffdda1"/><path d="M46 120v35m0-32q-23-13-31 10v25m267-35q23-13 31 10v25" stroke="#897963" stroke-width="8" fill="none"/><rect x="134" y="103" width="24" height="10" rx="5" fill="#d2b69b"/>`,
+            flur: `<rect x="40" y="128" width="246" height="12" rx="3" fill="#8f735d"/><path d="M61 139v26m203-26v26" stroke="#745945" stroke-width="7"/><rect x="110" y="38" width="94" height="84" rx="44" fill="#78877d" opacity=".35" stroke="#d4b38b" stroke-width="5"/><path d="M264 28v30" stroke="#a99d86" stroke-width="3"/><path d="M249 59q15-28 30 0z" fill="#373637"/><ellipse cx="264" cy="61" rx="15" ry="4" fill="#ffdda1"/><rect x="62" y="110" width="23" height="17" rx="3" fill="#b9a58d"/><path d="M73 112q-25-26-8-42 17 13 8 42m0 0q6-29 25-24 5 19-25 24" fill="#70845f"/>`,
+            balkon: `<path d="M16 115h294m-270 0v48m42-48v48m42-48v48m42-48v48m42-48v48m42-48v48m42-48v48" stroke="#988b77" stroke-width="5"/><path d="M112 112q18-42 63-25l-9 54h-64z" fill="#b6a58d"/><path d="M116 143v19m45-21v21" stroke="#7c6653" stroke-width="7"/><rect x="194" y="133" width="57" height="9" rx="4" fill="#99785c"/><path d="M221 141v22" stroke="#99785c" stroke-width="6"/><rect x="44" y="140" width="32" height="23" rx="4" fill="#98836b"/><path d="M60 141q-39-42-12-61 23 20 12 61m0 0q10-46 35-32 4 24-35 32" fill="#6c845f"/><path d="M278 36v31" stroke="#b8a88f" stroke-width="3"/><path d="M263 70q15-25 30 0z" fill="#3b3b3b"/><ellipse cx="278" cy="71" rx="15" ry="4" fill="#ffdda1"/>`
+        };
+        const art = interiors[kind] || `<circle cx="165" cy="82" r="51" fill="#9e927d" opacity=".35"/><path d="M103 91l62-54 62 54v65H103z" fill="#8f8774"/><path d="M145 156v-40h40v40" fill="#514b43"/>`;
+        return b `<svg class="cr-room-illustration" viewBox="0 0 330 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label=${`Illustration: ${name}`} preserveAspectRatio="xMidYMid meet">
+      <defs><radialGradient id=${`cr-light-${areaId}`} cx="70%" cy="48%" r="55%"><stop offset="0%" stop-color="#f6c57d" stop-opacity=".42"/><stop offset="100%" stop-color="#f6c57d" stop-opacity="0"/></radialGradient></defs>
+      <path d="M0 157h330" stroke="currentColor" opacity=".12"/>
+      <g class="cr-room-interior-shapes" .innerHTML=${art}></g>
+      <ellipse class="cr-room-illustration-light" cx="219" cy="101" rx="133" ry="86" fill=${`url(#cr-light-${areaId})`}/>
+    </svg>`;
     }
     saveRoomVisualSettings() {
         try {
@@ -3402,6 +3398,15 @@ ControlRoomDashboard.styles = i$3 `
     .dashboard .cr-room-tile-art,.dashboard .cr-room-detail-art{background:color-mix(in srgb,var(--cr-surface) 80%,var(--cr-bg))!important}
     .dashboard .cr-room-tile-art img,.dashboard .cr-room-detail-art img{max-width:100%;max-height:100%;object-fit:contain!important}
     .dashboard .cr-room-tile-art:after{opacity:.25!important}
+    /* V35 living illustrations: compact, theme-aware, GPU-free */
+    .dashboard .cr-room-illustration{display:block;width:100%;height:100%;max-width:100%;max-height:100%;overflow:visible;color:var(--cr-text);pointer-events:none}
+    .dashboard .cr-room-illustration-light{opacity:0;transition:opacity .22s ease}
+    .dashboard .cr-room-lit .cr-room-illustration-light{opacity:1}
+    .dashboard .cr-room-tile-art:has(.cr-room-illustration){display:grid!important;place-items:center!important;padding:5px 3px 0!important}
+    .dashboard .cr-room-detail-art:has(.cr-room-illustration){display:grid!important;place-items:center!important;padding:8px!important}
+    .dashboard .cr-room-tile-art:has(.cr-room-illustration):after{display:none!important}
+    @media(prefers-reduced-motion:reduce){.dashboard .cr-room-illustration-light{transition:none}}
+
     .dashboard .cr-room-lit .cr-room-tile-art{background:color-mix(in srgb,var(--cr-accent) 15%,var(--cr-surface))!important}
     .dashboard .cr-room-tile-art>ha-icon,.dashboard .cr-room-detail-art>ha-icon{color:var(--cr-accent)!important}
     .dashboard .cr-room-tile,.dashboard .cr-room-detail-hero{overflow:hidden}
