@@ -1435,9 +1435,9 @@ export class ControlRoomDashboard extends LitElement {
             return html`<button type="button" class="ambient-room ${roomOn?"illuminated":""}"
               @click=${()=>{this.selectedRoom=room;this.openLightColorId="";this.lightsTab="lights";}}>
               <span class="ambient-room-glow"></span>
-              <span class="ambient-room-icon">${this.renderIcon("mdi:home-lightbulb-outline")}</span>
-              <span class="ambient-room-name">${room}</span>
-              <span class="ambient-room-count">${roomOn} / ${roomLights.length}</span>
+              <span class="ambient-room-art" aria-hidden="true">${this.roomArt(`licht-${this.roomKind(room)}`,room)}</span>
+              <span class="ambient-room-details"><span class="ambient-room-name">${room}</span>
+              <span class="ambient-room-count"><span class="ambient-room-status ${roomOn?"is-on":""}"></span>${roomOn} / ${roomLights.length} ${this.getLanguage()==="de"?"an":this.getLanguage()==="pt"?"acesas":"on"}</span></span>
             </button>`;
           })}
         </div>
@@ -2693,6 +2693,23 @@ export class ControlRoomDashboard extends LitElement {
     .ambient-room-icon,.ambient-room-name,.ambient-room-count { position:relative; z-index:1; }
     .ambient-room-icon { color:var(--cr-muted); }
     .ambient-room.illuminated .ambient-room-icon { color:#f4c786; }
+    /* V36: Lichter-only illustrated room tiles; Räume layout/settings untouched. */
+    .dashboard .ambient-rooms{grid-template-columns:repeat(auto-fill,minmax(min(100%,195px),1fr));gap:13px;margin-top:18px}
+    .dashboard .ambient-room{min-height:190px;padding:0;display:flex;flex-direction:column;gap:0;align-items:stretch;border-radius:19px;isolation:isolate;background:color-mix(in srgb,var(--cr-surface) 90%,var(--cr-bg));border:1px solid color-mix(in srgb,var(--cr-text) 12%,transparent);color:var(--cr-text);transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+    .dashboard .ambient-room:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--cr-accent) 45%,transparent);box-shadow:0 13px 30px rgba(0,0,0,.13)}
+    .dashboard .ambient-room.illuminated{border-color:color-mix(in srgb,var(--cr-accent) 45%,transparent)}
+    .dashboard .ambient-room-art{position:relative;z-index:1;display:grid;place-items:center;width:100%;height:132px;overflow:hidden;background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,var(--cr-accent) 9%,transparent),transparent 75%)}
+    .dashboard .ambient-room-art .cr-room-illustration{width:100%;height:100%;max-width:265px;max-height:145px;display:block;pointer-events:none}
+    .dashboard .ambient-room-art .cr-room-illustration-light{opacity:0;transition:opacity .3s ease}
+    .dashboard .ambient-room.illuminated .ambient-room-art .cr-room-illustration-light{opacity:1}
+    .dashboard .ambient-room-details{position:relative;z-index:2;display:flex;flex-direction:column;align-items:flex-start;gap:7px;width:100%;padding:12px 15px 14px;border-top:1px solid color-mix(in srgb,var(--cr-text) 7%,transparent)}
+    .dashboard .ambient-room-name{font-size:13px;font-weight:700;color:var(--cr-text);line-height:1.25}
+    .dashboard .ambient-room-count{display:flex;align-items:center;gap:7px;color:var(--cr-muted);font-size:11px}
+    .dashboard .ambient-room-status{width:7px;height:7px;flex:none;border-radius:50%;background:color-mix(in srgb,var(--cr-muted) 70%,transparent)}
+    .dashboard .ambient-room-status.is-on{background:var(--cr-accent);box-shadow:0 0 10px var(--cr-accent)}
+    @media(max-width:520px){.dashboard .ambient-rooms{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.dashboard .ambient-room{min-height:165px}.dashboard .ambient-room-art{height:110px}.dashboard .ambient-room-details{padding:10px 11px 12px}}
+    @media(prefers-reduced-motion:reduce){.dashboard .ambient-room{transition:none}.dashboard .ambient-room-art .cr-room-illustration-light{transition:none}}
+
     .ambient-room-name { font-size:12px; font-weight:650; }
     .ambient-room-count { color:var(--cr-muted); font-size:11px; }
     @media (prefers-reduced-motion:reduce) { .ambient-room-glow { transition:none; } }
