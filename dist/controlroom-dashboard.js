@@ -3189,6 +3189,118 @@ ControlRoomDashboard.styles = i$3 `
     .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-preview,
     .dashboard.cr-hacs-neutral .cr-theme-studio .cr-theme-preview * {color:inherit!important;}
 
+
+    /* V15: legibility first — readable surfaces regardless of the HA gradient. */
+    .dashboard .sidebar,
+    .dashboard .main {text-shadow:none!important}
+    .dashboard .sidebar .nav-item,
+    .dashboard .sidebar .sidebar-title,
+    .dashboard .sidebar .sidebar-footer,
+    .dashboard .main .settings-intro,
+    .dashboard .main .page-heading,
+    .dashboard .main .cr-rooms-heading {color:var(--cr-bg-text)!important}
+    .dashboard .cr-theme-studio,
+    .dashboard .settings-center {isolation:isolate}
+    .dashboard .cr-theme-style-list button,
+    .dashboard .cr-theme-choice,
+    .dashboard .settings-option,
+    .dashboard .overview-card,
+    .dashboard .cr-room-section,
+    .dashboard .cr-room-device,
+    .dashboard .studio-room-card {
+      background:var(--cr-surface)!important;
+      color:var(--cr-text)!important;
+      backdrop-filter:none!important;
+      -webkit-backdrop-filter:none!important;
+    }
+    .dashboard .cr-theme-style-list button *,
+    .dashboard .cr-theme-choice strong,
+    .dashboard .settings-option *,
+    .dashboard .overview-card *,
+    .dashboard .cr-room-section *,
+    .dashboard .cr-room-device *,
+    .dashboard .studio-room-card * {color:var(--cr-text)!important}
+    .dashboard .cr-theme-choice .cr-theme-preview,
+    .dashboard .cr-theme-choice .cr-theme-preview * {color:inherit!important}
+    .dashboard .cr-theme-actions button:last-child,
+    .dashboard .settings-save,
+    .dashboard button.primary {color:var(--cr-on-accent)!important}
+    .dashboard .cr-theme-actions button:last-child *,
+    .dashboard .settings-save *,
+    .dashboard button.primary * {color:var(--cr-on-accent)!important}
+    .dashboard.cr-hacs-neutral .cr-theme-actions button:last-child,
+    .dashboard.cr-hacs-neutral .settings-save,
+    .dashboard.cr-hacs-neutral button.primary,
+    .dashboard.cr-hacs-neutral .cr-theme-actions button:last-child *,
+    .dashboard.cr-hacs-neutral .settings-save *,
+    .dashboard.cr-hacs-neutral button.primary * {color:var(--cr-neutral-button-text)!important}
+    /* Premium room cards: no dead band above photo, no giant blank section. */
+    .dashboard .cr-room-grid {
+      grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr))!important;
+      gap:16px!important;
+      align-items:stretch;
+    }
+    .dashboard .cr-room-tile {
+      display:flex!important;
+      flex-direction:column!important;
+      border-radius:18px!important;
+      background:var(--cr-surface)!important;
+      color:var(--cr-text)!important;
+      min-height:0!important;
+      overflow:hidden!important;
+      backdrop-filter:none!important;
+      -webkit-backdrop-filter:none!important;
+    }
+    .dashboard .cr-room-tile-art {
+      height:auto!important;
+      aspect-ratio:16/10!important;
+      flex:0 0 auto!important;
+      display:block!important;
+      background:var(--cr-surface)!important;
+      overflow:hidden!important;
+    }
+    .dashboard .cr-room-tile-art img.cr-art-photo {
+      position:absolute!important;inset:0!important;
+      width:100%!important;height:100%!important;
+      object-fit:cover!important;object-position:center!important;
+    }
+    .dashboard .cr-room-tile-art img.cr-art-3d {
+      position:absolute!important;inset:0!important;
+      width:100%!important;height:100%!important;
+      object-fit:contain!important;object-position:center!important;
+    }
+    .dashboard .cr-room-tile-art:after {display:none!important}
+    .dashboard .cr-room-tile-arrow {z-index:2!important}
+    .dashboard .cr-room-tile-body {
+      display:flex!important;
+      flex:1 1 auto!important;
+      flex-direction:column!important;
+      gap:5px!important;
+      padding:14px 15px 13px!important;
+      background:var(--cr-surface)!important;
+      color:var(--cr-text)!important;
+    }
+    .dashboard .cr-room-tile-body h2 {
+      margin:0!important;font-size:15px!important;
+      line-height:1.3!important;color:var(--cr-text)!important;
+    }
+    .dashboard .cr-room-tile-body p {
+      margin:0!important;font-size:12px!important;
+      line-height:1.5!important;color:var(--cr-text)!important;
+    }
+    .dashboard .cr-room-tile-footer {
+      margin-top:auto!important;padding-top:12px!important;
+      color:var(--cr-text)!important;
+      font-size:11px!important;
+    }
+    .dashboard .cr-room-tile-footer * {color:var(--cr-text)!important}
+    @media(max-width:640px){
+      .dashboard .cr-room-grid {grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:11px!important}
+      .dashboard .cr-room-tile-body {padding:11px!important}
+      .dashboard .cr-room-tile-body h2 {font-size:13px!important}
+      .dashboard .cr-room-tile-art {aspect-ratio:4/3!important}
+    }
+
 `;
 __decorate([
     n({ attribute: false })
