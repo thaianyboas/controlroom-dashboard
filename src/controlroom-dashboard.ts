@@ -363,6 +363,8 @@ export class ControlRoomDashboard extends LitElement {
   @state() private crThemePage = 0;
   @state() private crHAMode: "auto" | "light" | "dark" = "auto";
   private crThemeSnapshot = "";
+  @state() private crDefaultTheme = "purple";
+  @state() private crDefaultStyle: "glass" | "solid" | "minimal" = "glass";
 
   @state() private labelOptions: Array<{label_id:string;name:string}> = [];
   @state() private entityLabels: Record<string,string[]> = {};
@@ -619,7 +621,15 @@ export class ControlRoomDashboard extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this.restorePreferences();
-    try {const v=JSON.parse(localStorage.getItem("controlroom-theme-v1")||"{}");this.crTheme=v.theme||"purple";this.crThemeStyle=v.style||"glass";this.crThemeSource="controlroom";this.crHATheme=v.haTheme||"";this.crHAMode=v.haMode||"auto";}catch(error){console.warn(error);}
+    try {
+      const saved=JSON.parse(localStorage.getItem("controlroom-theme-v1")||"{}");
+      const standard=JSON.parse(localStorage.getItem("controlroom-theme-default-v1")||"{}");
+      this.crDefaultTheme=standard.theme||saved.theme||"purple";
+      this.crDefaultStyle=(["glass","solid","minimal"].includes(standard.style)?standard.style:saved.style)||"glass";
+      this.crTheme=this.crDefaultTheme;
+      this.crThemeStyle=this.crDefaultStyle;
+      this.crThemeSource="controlroom";this.crHATheme="";this.crHAMode="auto";
+    }catch(error){console.warn("ControlRoom: unable to restore theme",error);}
     try { this.roomImages = JSON.parse(localStorage.getItem("controlroom-room-images-v1") || "{}"); } catch { this.roomImages = {}; }
     try {const v=JSON.parse(localStorage.getItem("controlroom-room-style-v1")||"{}");if(["3d","photos","custom"].includes(v.style))this.roomStyle=v.style;if(typeof v.auto==="boolean")this.roomAutoSwitch=v.auto;if(v.byArea&&typeof v.byArea==="object")this.roomStyleByArea=v.byArea;if(v.photos&&typeof v.photos==="object")this.roomPhotoUrls=v.photos;if(v.images&&typeof v.images==="object")this.roomImages={...this.roomImages,...v.images};}catch(error){console.warn(error);}
     this.restoreWelcome();
@@ -1503,6 +1513,8 @@ export class ControlRoomDashboard extends LitElement {
   private crThemeData(){return {theme:this.crTheme,style:this.crThemeStyle,source:"controlroom",haTheme:"",haMode:"auto"};}
   private crPalettes(){return [
 
+    {id:"black-gold-royal",name:"Black & Gold · Imperial",accent:"#D9B76E",bg:"#050505",surface:"#18140D",text:"#E8C77D"},
+    {id:"black-bordeaux-royal",name:"Black & Bordeaux · Prestige",accent:"#C35B76",bg:"#050505",surface:"#1B0D13",text:"#E3A0B1"},
     {id:"purple",name:"Royal Purple",accent:"#a477f5",bg:"#111019",surface:"#282037",text:"#f6f3fb"},
     {id:"blue",name:"Midnight Blue",accent:"#559cff",bg:"#0c1628",surface:"#1c304b",text:"#f5f8ff"},
     {id:"emerald",name:"Emerald",accent:"#43c6a0",bg:"#0c1b19",surface:"#1c3530",text:"#f2fff9"},
@@ -1594,15 +1606,26 @@ export class ControlRoomDashboard extends LitElement {
       const hex=(value:string)=>[1,3,5].map(k=>parseInt(value.slice(k,k+2),16));
       const rgb=(values:number[])=>`#${values.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join("")}`;
       const mix=(a:string,b:string,t:number)=>rgb(hex(a).map((v,k)=>v*(1-t)+hex(b)[k]*t));
+      // Each signature appears once per collection. Families change the whole visual
+      // composition, not just a tiny opacity shift. IDs stay stable for saved themes.
       const generated=Array.from({length:1110},(_,i)=>{
-        const signature=signatures[(i*37+Math.floor(i/60))%signatures.length];
+        const signature=signatures[i%signatures.length];
         const family=Math.floor(i/signatures.length);
         const [name,accent,bg,surface,text]=signature;
-        const mode=family%5;
-        const accent2=mode===0?accent:mode===1?mix(accent,text,.24):mode===2?mix(accent,bg,.17):mode===3?mix(accent,surface,.22):mix(accent,text,.12);
-        const bg2=mode===0?bg:mode===1?mix(bg,surface,.17):mode===2?mix(bg,surface,.36):mode===3?mix(bg,surface,.08):mix(bg,surface,.26);
-        const surface2=mode===0?surface:mode===1?mix(surface,bg,.22):mode===2?mix(surface,bg,.08):mode===3?mix(surface,bg,.34):mix(surface,bg,.15);
-        return {id:`signature-${String(i+1).padStart(4,"0")}`,name:`${name} · ${families[family%families.length]} ${String(i+1).padStart(4,"0")}`,accent:accent2,bg:bg2,surface:surface2,text};
+        const mode=family%9;
+        const variants:[number,number,number][]=[
+          [0,0,0], [.13,.27,.16], [.28,.49,.28], [.43,.15,.42],
+          [.08,.61,.08], [.35,.37,.54], [.56,.21,.22], [.20,.73,.40], [.47,.56,.10]
+        ];
+        const [accentBlend,bgBlend,surfaceBlend]=variants[mode];
+        // Stronger variations distinguish Velvet, Lacquer, Satin etc. even at thumbnail size.
+        const accent2=mix(accent,text,accentBlend);
+        const bg2=mix(bg,surface,bgBlend);
+        const surface2=mix(surface,bg,surfaceBlend);
+        const finalAccent=family>=9?mix(accent2,bg,(family-8)*.018):accent2;
+        const finalBg=family>=9?mix(bg2,surface,(family-8)*.032):bg2;
+        const finalSurface=family>=9?mix(surface2,bg,(family-8)*.024):surface2;
+        return {id:`signature-${String(i+1).padStart(4,"0")}`,name:`${name} · ${families[family%families.length]} ${String(i+1).padStart(4,"0")}`,accent:finalAccent,bg:finalBg,surface:finalSurface,text};
       });
       return generated;
     })(),
@@ -1729,6 +1752,17 @@ export class ControlRoomDashboard extends LitElement {
     // External theme colors are applied locally; do not change the HA theme for other dashboards.
     this.crThemeSnapshot=JSON.stringify(this.crThemeData());this.settingsSection="overview";
   }
+  private setCRThemeAsDefault(){
+    const data=this.crThemeData();
+    try {
+      localStorage.setItem("controlroom-theme-default-v1",JSON.stringify(data));
+      localStorage.setItem("controlroom-theme-v1",JSON.stringify(data));
+      this.crDefaultTheme=this.crTheme;
+      this.crDefaultStyle=this.crThemeStyle;
+      this.crThemeSnapshot=JSON.stringify(data);
+      this.requestUpdate();
+    } catch(error) {console.warn("ControlRoom: default theme could not be saved",error);}
+  }
   private renderThemeSettings(){
     // Show only one entry per visually equivalent palette; keep the selected palette visible.
     const rawPalettes=this.crPalettes();
@@ -1761,7 +1795,7 @@ export class ControlRoomDashboard extends LitElement {
       ${filtered.length===0?html`<p class="settings-note">Keine Farbwelt gefunden. Probiere einen anderen Suchbegriff.</p>`:nothing}
       ${pages>1?html`<nav class="cr-theme-pagination" aria-label="Farbwelten Seiten"><button class="cr-page-nav cr-atelier-page-button" ?disabled=${page===0} @click=${()=>{this.crThemePage=Math.max(0,page-1);}}><span>Zurück</span></button><div class="cr-page-center"><span class="cr-page-eyebrow">KOLLEKTION</span><label class="cr-page-select"><select aria-label="Seite auswählen" .value=${String(page)} @change=${(e:Event)=>{this.crThemePage=Number((e.target as HTMLSelectElement).value);}}>${Array.from({length:pages},(_,i)=>html`<option value=${String(i)}>Seite ${i+1} / ${pages}</option>`)}</select>${this.renderIcon("mdi:chevron-down")}</label><div class="cr-page-progress"><span style=${`width:${((page+1)/pages)*100}%`}></span></div></div><button class="cr-page-nav cr-atelier-page-button" ?disabled=${page>=pages-1} @click=${()=>{this.crThemePage=Math.min(pages-1,page+1);}}><span>Weiter</span></button></nav>`:nothing}
 
-      <div class="cr-theme-actions"><span class="cr-theme-action-caption">${selected.name}</span><button @click=${()=>this.cancelCRTheme()}>Abbrechen</button><button @click=${()=>this.saveCRTheme()}>Speichern</button></div>
+      <div class="cr-theme-actions"><span class="cr-theme-action-caption">${selected.name}${this.crDefaultTheme===this.crTheme && this.crDefaultStyle===this.crThemeStyle?" · Standard":""}</span><button type="button" class="cr-set-default" @click=${()=>this.setCRThemeAsDefault()}>${this.renderIcon("mdi:star-outline")} Als Standard festlegen</button><button @click=${()=>this.cancelCRTheme()}>Abbrechen</button><button @click=${()=>this.saveCRTheme()}>Speichern</button></div>
     </div>`;
   }
 
@@ -2908,6 +2942,9 @@ export class ControlRoomDashboard extends LitElement {
     .dashboard ha-icon:not(.cr-keep-color),.dashboard .settings-option-icon ha-icon,.dashboard .overview-card ha-icon,.dashboard .nav-item ha-icon,.dashboard .cr-room-section ha-icon{color:var(--cr-accent)!important}
     .dashboard .settings-option-icon,.dashboard .overview-card-icon,.dashboard .card-icon,.dashboard .nav-item.active{color:var(--cr-accent)!important}
     .dashboard button:focus-visible,.dashboard select:focus-visible{outline:2px solid var(--cr-accent)!important;outline-offset:2px}
+    .dashboard .cr-theme-actions .cr-set-default{background:var(--cr-surface)!important;color:var(--cr-text)!important;border:1px solid var(--cr-accent)!important;display:inline-flex;align-items:center;gap:7px;font-weight:700}
+    .dashboard .cr-theme-actions .cr-set-default *{color:inherit!important}
+    @media(max-width:700px){.dashboard .cr-theme-actions{flex-wrap:wrap}.dashboard .cr-theme-actions .cr-theme-action-caption{display:none}.dashboard .cr-theme-actions .cr-set-default{flex:1 1 100%;justify-content:center}}
     .dashboard .cr-theme-actions button:last-child{background:var(--cr-accent)!important;color:var(--cr-bg)!important}
     .dashboard .cr-theme-choice,.dashboard .cr-theme-style-list button{background:color-mix(in srgb,var(--cr-surface) 80%,transparent)!important;color:var(--cr-text)!important}
     .dashboard.cr-theme-glass .overview-card,.dashboard.cr-theme-glass .smart-bar,.dashboard.cr-theme-glass .settings-option,.dashboard.cr-theme-glass .cr-room-tile,.dashboard.cr-theme-glass .cr-room-section{background:color-mix(in srgb,var(--cr-surface) 67%,transparent)!important;backdrop-filter:blur(24px) saturate(145%)!important;box-shadow:0 14px 40px #00000022,inset 0 1px #ffffff18!important;border:1px solid color-mix(in srgb,var(--cr-text) 16%,transparent)!important;border-radius:22px!important}
