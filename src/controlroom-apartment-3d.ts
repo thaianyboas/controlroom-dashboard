@@ -5,7 +5,7 @@ type Hass = {states:Record<string,HAState>};
 type Pt = [number,number];
 type Room = {name:string;points:Pt[];floor:number};
 
-/** V56 architectural validation model. Coordinates are traced from the supplied floor plan,
+/** V58 architectural correction model. Coordinates are traced from the supplied floor plan,
  *  not an architect's measured CAD survey. No furniture is added in this stage. */
 export class ControlRoomApartment3D extends HTMLElement {
   private scene=new THREE.Scene();
@@ -38,8 +38,8 @@ export class ControlRoomApartment3D extends HTMLElement {
   private readonly rooms:Room[]=[
     {name:'Schlafzimmer',points:[[127,68],[281,68],[281,259],[127,259]],floor:0xc5b49f},
     {name:'Badezimmer',points:[[115,271],[211,271],[211,443],[115,443]],floor:0x4c625b},
-    {name:'Flur',points:[[212,261],[297,261],[297,299],[408,299],[408,379],[316,379],[316,443],[212,443]],floor:0xbba98f},
-    {name:'Wohnzimmer',points:[[115,445],[316,445],[316,649],[115,649]],floor:0xb68c63},
+    {name:'Flur',points:[[212,261],[297,261],[297,299],[408,299],[408,379],[212,379]],floor:0xbba98f},
+    {name:'Wohnzimmer',points:[[212,379],[316,379],[316,649],[115,649],[115,445],[212,445]],floor:0xb68c63},
     {name:'Küche',points:[[316,380],[430,380],[430,558],[316,558]],floor:0xb9a58d},
     {name:'Balkon',points:[[316,558],[430,558],[430,650],[316,650]],floor:0x88837a}
   ];
@@ -53,22 +53,21 @@ export class ControlRoomApartment3D extends HTMLElement {
     // Bathroom, its internal access and the external left window.
     {a:[115,271],b:[115,310]},{a:[115,310],b:[115,366],kind:'window'},{a:[115,366],b:[115,443]},
     {a:[115,271],b:[211,271]},{a:[115,443],b:[211,443]},
-    {a:[211,271],b:[211,293]},{a:[211,293],b:[211,337],kind:'door'},{a:[211,337],b:[211,443]},
+    {a:[211,271],b:[211,301]},{a:[211,301],b:[211,325],kind:'door'},{a:[211,325],b:[211,443]},
     // Entry corridor, stepped exterior contour and front door (upper horizontal opening).
     {a:[281,259],b:[297,259]},{a:[297,259],b:[297,299]},
     {a:[297,299],b:[334,299]},{a:[334,299],b:[375,299],kind:'door'},{a:[375,299],b:[408,299]},
     {a:[408,299],b:[408,379]},
-    {a:[211,379],b:[240,379]},{a:[240,379],b:[266,379],kind:'door'},{a:[266,379],b:[316,379]},
-    {a:[316,379],b:[354,379]},{a:[354,379],b:[381,379],kind:'door'},{a:[381,379],b:[408,379]},
+    {a:[211,379],b:[238,379]},{a:[238,379],b:[292,379],kind:'door'},{a:[292,379],b:[316,379]},
+    {a:[316,379],b:[343,379]},{a:[343,379],b:[396,379],kind:'door'},{a:[396,379],b:[408,379]},
     // Living room, window along its bottom facade and open passage to kitchen.
     {a:[115,443],b:[115,649]},
     {a:[115,649],b:[139,649]},{a:[139,649],b:[299,649],kind:'window'},{a:[299,649],b:[316,649]},
-    {a:[316,443],b:[316,480]},{a:[316,480],b:[316,545],kind:'opening'},{a:[316,545],b:[316,649]},
+    {a:[316,379],b:[316,590]},{a:[316,590],b:[316,622],kind:'door'},{a:[316,622],b:[316,650]},
     // Kitchen and its right exterior wall.
     {a:[316,379],b:[430,379]},{a:[430,379],b:[430,558]},
     {a:[316,558],b:[348,558]},{a:[348,558],b:[402,558],kind:'window'},{a:[402,558],b:[430,558]},
     // Balcony is an exterior space, with a low parapet and an open/door access from the living room.
-    {a:[316,558],b:[316,590],room:'Balkon'},{a:[316,590],b:[316,622],kind:'door',room:'Balkon'},{a:[316,622],b:[316,650],room:'Balkon'},
     {a:[316,650],b:[430,650],room:'Balkon'},{a:[430,558],b:[430,650],room:'Balkon'}
   ];
   connectedCallback(){
@@ -84,7 +83,7 @@ export class ControlRoomApartment3D extends HTMLElement {
       .roomname{position:absolute;left:18px;bottom:45px;color:#f3ece3;font-size:12px;z-index:2;pointer-events:none}
       button{border:1px solid #ffffff33;border-radius:10px;background:#16181dcc;color:#eee;padding:9px 12px;font:inherit;cursor:pointer;backdrop-filter:blur(12px)}button:hover{background:#343741}
       @media(max-width:540px){.hint{display:none}.toolbar{right:9px;bottom:9px;max-width:95%}.label{left:12px;top:12px}.modes{top:58px;left:10px;right:auto}}
-    </style><div class="stage"></div><div class="label"><b>Living Spaces · Architektur</b><span>V57 · Kameramodi · Grundrissprüfung</span></div><div class="hint">Ziehen: drehen · Scrollen: zoomen · Raum anklicken: fokussieren</div><div class="roomname" id="roomname">Gesamte Wohnung</div><div class="modes"><button data-view="top">▦ Planta</button><button data-view="3d" class="active">⬡ 3D</button><button data-view="inside">◉ Interior</button></div><div class="toolbar"><button data-walls title="Wände ein-/ausblenden">◫ Wände</button><button data-zoom="in" title="Vergrößern">＋</button><button data-zoom="out" title="Verkleinern">－</button><button data-reset title="Ansicht zurücksetzen">↺</button></div>`;
+    </style><div class="stage"></div><div class="label"><b>Living Spaces · Architektur</b><span>V58 · Wandkorrekturen · Grundrissprüfung</span></div><div class="hint">Ziehen: drehen · Scrollen: zoomen · Raum anklicken: fokussieren</div><div class="roomname" id="roomname">Gesamte Wohnung</div><div class="modes"><button data-view="top">▦ Planta</button><button data-view="3d" class="active">⬡ 3D</button><button data-view="inside">◉ Interior</button></div><div class="toolbar"><button data-walls title="Wände ein-/ausblenden">◫ Wände</button><button data-zoom="in" title="Vergrößern">＋</button><button data-zoom="out" title="Verkleinern">－</button><button data-reset title="Ansicht zurücksetzen">↺</button></div>`;
     this.stage=this.shadowRoot!.querySelector('.stage')!;
     this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'default'});
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
@@ -122,7 +121,7 @@ export class ControlRoomApartment3D extends HTMLElement {
       if(seg.kind==='opening')continue;
       if(seg.kind==='door'){
         // Door opening: threshold only, no solid wall crossing the doorway.
-        this.line(seg.a,seg.b,.045,0x8b7d6e);
+        this.line(seg.a,seg.b,.018,0x8b7d6e);
       }else if(seg.kind==='window'){
         // A visible window sill and transparent glass panel, not a solid wall.
         this.line(seg.a,seg.b,.27,0x918b83);
