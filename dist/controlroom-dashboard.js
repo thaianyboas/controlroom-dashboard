@@ -50472,6 +50472,11 @@ class ControlRoomApartment3D extends HTMLElement {
         this.viewMode = "3d";
         this.wallsVisible = true;
         this.walls = [];
+        this.editor = false;
+        this.selectedWall = -1;
+        this.history = [];
+        this.future = [];
+        this.storageKey = 'controlroom-apartment-studio-v1';
         this.stage = document.createElement('div');
         this.frame = 0;
         this.angle = .76;
@@ -50559,10 +50564,38 @@ class ControlRoomApartment3D extends HTMLElement {
       .toolbar{position:absolute;right:15px;bottom:15px;display:flex;gap:7px;z-index:2;flex-wrap:wrap;justify-content:flex-end;max-width:80%}
       .modes{position:absolute;top:15px;right:15px;display:flex;gap:5px;z-index:2;background:#16181dcc;border:1px solid #ffffff25;padding:4px;border-radius:13px;backdrop-filter:blur(12px)}
       .modes button{border:0;background:transparent;padding:8px 11px}.modes button.active{background:#77736688;color:white}
+      .studio{display:none;position:absolute;top:65px;right:14px;width:min(290px,calc(100% - 28px));max-height:calc(100% - 145px);overflow:auto;z-index:5;background:#171b20ed;border:1px solid #ffffff30;border-radius:15px;padding:14px;box-sizing:border-box;box-shadow:0 15px 45px #0008}
+      :host([studio-mode]){height:100%;min-height:580px;border:1px solid #ffffff1d}
+      :host([studio-mode]) .stage{right:315px}
+      :host([studio-mode]) .studio{display:block;top:72px;right:14px;bottom:70px;max-height:none;width:288px;overflow:auto}
+      :host([studio-mode]) .toolbar{right:326px}
+      :host([studio-mode]) .modes{right:326px}
+      :host([studio-mode]) [data-studio]{display:none}
+      @media(max-width:850px){:host([studio-mode]) .stage{right:0;bottom:300px}:host([studio-mode]) .studio{top:auto;bottom:8px;left:10px;right:10px;width:auto;height:285px;max-height:none}:host([studio-mode]) .toolbar{right:10px;bottom:310px}:host([studio-mode]) .modes{right:10px}}
+      .studio.open{display:block}.studio h3{font-size:14px;margin:0 0 9px}.studio p{color:#bcb8b0;line-height:1.5;font-size:11px}
+      .studio .actions{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}
+      .studio input,.studio select{width:100%;box-sizing:border-box;background:#242930;color:#fff;border:1px solid #ffffff35;border-radius:8px;padding:7px;margin:3px 0 8px;font:inherit}
+      .studio label{display:block;color:#d5d1c9;font-size:11px}
+      .studio button{padding:7px 9px;font-size:11px}
+      .studio .danger{border-color:#b66a6a;color:#ffcccc}
       .roomname{position:absolute;left:18px;bottom:45px;color:#f3ece3;font-size:12px;z-index:2;pointer-events:none}
       button{border:1px solid #ffffff33;border-radius:10px;background:#16181dcc;color:#eee;padding:9px 12px;font:inherit;cursor:pointer;backdrop-filter:blur(12px)}button:hover{background:#343741}
       @media(max-width:540px){.hint{display:none}.toolbar{right:9px;bottom:9px;max-width:95%}.label{left:12px;top:12px}.modes{top:58px;left:10px;right:auto}}
-    </style><div class="stage"></div><div class="label"><b>Living Spaces · Architektur</b><span>V58 · Wandkorrekturen · Grundrissprüfung</span></div><div class="hint">Ziehen: drehen · Scrollen: zoomen · Raum anklicken: fokussieren</div><div class="roomname" id="roomname">Gesamte Wohnung</div><div class="modes"><button data-view="top">▦ Planta</button><button data-view="3d" class="active">⬡ 3D</button><button data-view="inside">◉ Interior</button></div><div class="toolbar"><button data-walls title="Wände ein-/ausblenden">◫ Wände</button><button data-zoom="in" title="Vergrößern">＋</button><button data-zoom="out" title="Verkleinern">－</button><button data-reset title="Ansicht zurücksetzen">↺</button></div>`;
+    </style><div class="stage"></div><div class="label"><b>Living Spaces · Architektur</b><span>V61 · Floor Studio · Grundrissprüfung</span></div><div class="hint">Ziehen: drehen · Scrollen: zoomen · Raum anklicken: fokussieren</div><div class="roomname" id="roomname">Gesamte Wohnung</div><div class="studio" id="studio">
+      <h3>ControlRoom Floor Studio · V61</h3>
+      <p>Selecione uma parede no modo Planta. Ajuste suas extremidades em coordenadas da planta. Alterações são salvas apenas neste navegador.</p>
+      <div id="wall-fields" hidden>
+        <label>Início X <input id="ax" type="number" step="1"></label>
+        <label>Início Y <input id="ay" type="number" step="1"></label>
+        <label>Fim X <input id="bx" type="number" step="1"></label>
+        <label>Fim Y <input id="by" type="number" step="1"></label>
+        <label>Tipo<select id="kind"><option value="wall">Parede</option><option value="window">Janela</option><option value="door">Porta</option><option value="opening">Abertura</option></select></label>
+        <div class="actions"><button id="apply-wall">Aplicar</button><button id="delete-wall" class="danger">Excluir</button></div>
+      </div>
+      <div class="actions"><button id="new-wall">+ Parede</button><button id="undo-wall">↶ Desfazer</button><button id="redo-wall">↷ Refazer</button></div>
+      <div class="actions"><button id="save-wall">Salvar local</button><button id="export-wall">Exportar JSON</button><button id="reset-wall" class="danger">Restaurar V58</button></div>
+      <p id="studio-status">Clique em uma parede para editar.</p>
+    </div><div class="modes"><button data-view="top">▦ Planta</button><button data-view="3d" class="active">⬡ 3D</button><button data-view="inside">◉ Interior</button></div><div class="toolbar"><button data-studio>✎ Studio</button><button data-walls title="Wände ein-/ausblenden">◫ Wände</button><button data-zoom="in" title="Vergrößern">＋</button><button data-zoom="out" title="Verkleinern">－</button><button data-reset title="Ansicht zurücksetzen">↺</button></div>`;
         this.stage = this.shadowRoot.querySelector('.stage');
         this.renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'default' });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -50585,8 +50618,14 @@ class ControlRoomApartment3D extends HTMLElement {
         const fill = new DirectionalLight(0xc8d5ec, .9);
         fill.position.set(8, 7, -7);
         this.scene.add(fill);
+        this.loadLocal();
         this.build();
         this.updateCamera();
+        if (this.hasAttribute("studio-mode")) {
+            this.editor = true;
+            this.shadowRoot.querySelector("#studio").classList.add("open");
+            this.setView("top");
+        }
         this.observer = new ResizeObserver(() => this.resize());
         this.observer.observe(this);
         this.stage.addEventListener('pointerdown', this.down);
@@ -50599,6 +50638,32 @@ class ControlRoomApartment3D extends HTMLElement {
         this.shadowRoot.querySelector('[data-reset]').addEventListener('click', () => { this.focusRoom = undefined; this.center.set(0, 0, 0); this.radius = 23; this.angle = .76; this.elevation = .62; this.setView(this.viewMode); });
         this.shadowRoot.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => this.setView(button.dataset.view)));
         this.shadowRoot.querySelector('[data-walls]').addEventListener('click', () => { this.wallsVisible = !this.wallsVisible; this.walls.forEach(w => w.visible = this.wallsVisible); this.shadowRoot.querySelector('[data-walls]').textContent = this.wallsVisible ? '◫ Wände' : '▤ Ohne Wände'; });
+        this.shadowRoot.querySelector('[data-studio]').addEventListener('click', () => {
+            this.editor = !this.editor;
+            this.shadowRoot.querySelector('#studio').classList.toggle('open', this.editor);
+            if (this.editor)
+                this.setView('top');
+            this.shadowRoot.querySelector('[data-studio]').textContent = this.editor ? '✕ Fechar Studio' : '✎ Studio';
+        });
+        const bind = (id, fn) => this.shadowRoot.querySelector('#' + id).addEventListener('click', fn);
+        bind('apply-wall', () => this.applyWall());
+        bind('delete-wall', () => { if (this.selectedWall < 0)
+            return; this.snapshot(); this.currentSegments().splice(this.selectedWall, 1); this.selectedWall = -1; this.rebuild(); this.showWall(); });
+        bind('new-wall', () => { this.snapshot(); this.currentSegments().push({ a: [260, 380], b: [300, 380] }); this.selectedWall = this.currentSegments().length - 1; this.rebuild(); this.showWall(); });
+        bind('undo-wall', () => { if (!this.history.length)
+            return; this.future.push(this.clone()); this.editableSegments = this.history.pop(); this.selectedWall = -1; this.rebuild(); this.showWall(); });
+        bind('redo-wall', () => { if (!this.future.length)
+            return; this.history.push(this.clone()); this.editableSegments = this.future.pop(); this.selectedWall = -1; this.rebuild(); this.showWall(); });
+        bind('save-wall', () => { try {
+            localStorage.setItem(this.storageKey, JSON.stringify(this.currentSegments()));
+            this.status('Salvo neste navegador.');
+        }
+        catch {
+            this.status('Não foi possível salvar no navegador.');
+        } });
+        bind('export-wall', () => { const blob = new Blob([JSON.stringify(this.currentSegments(), null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'controlroom-apartment-walls.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); this.status('Backup JSON exportado.'); });
+        bind('reset-wall', () => { if (!confirm('Restaurar todas as paredes originais da V58?'))
+            return; this.snapshot(); this.editableSegments = this.segments.map(s => ({ ...s, a: [...s.a], b: [...s.b] })); this.selectedWall = -1; this.rebuild(); this.showWall(); this.status('Base V58 restaurada. Clique em Salvar local para guardar.'); });
         this.loop();
     }
     disconnectedCallback() { cancelAnimationFrame(this.frame); this.observer?.disconnect(); this.stage.removeEventListener('pointerdown', this.down); this.stage.removeEventListener('pointermove', this.move); this.stage.removeEventListener('pointerup', this.up); this.stage.removeEventListener('pointercancel', this.up); this.stage.removeEventListener('wheel', this.wheel); this.geometries.forEach(g => g.dispose()); this.materials.forEach(m => m.dispose()); this.renderer?.dispose(); this.renderer?.domElement.remove(); this.renderer = undefined; this.selectable = []; this.scene.clear(); }
@@ -50619,7 +50684,8 @@ class ControlRoomApartment3D extends HTMLElement {
         this.cuboid(0, -0.38, 0, 8.65, .14, 15.65, 0x19191e);
         for (const room of this.rooms)
             this.floor(room);
-        for (const seg of this.segments) {
+        for (const [index, seg] of this.currentSegments().entries()) {
+            const before = this.walls.length;
             const low = seg.room === 'Balkon';
             if (seg.kind === 'opening')
                 continue;
@@ -50642,7 +50708,76 @@ class ControlRoomApartment3D extends HTMLElement {
             }
             else
                 this.line(seg.a, seg.b, low ? .32 : .83, low ? 0x9b938b : 0xc7bdb1, seg.room);
+            // Each wall can be selected independently in Studio.
+            for (const wall of this.walls.slice(before)) {
+                wall.userData.wallIndex = index;
+                this.selectable.push(wall);
+                if (index === this.selectedWall && wall instanceof Mesh) {
+                    wall.material.color.setHex(0x4fc6a6);
+                }
+            }
         }
+    }
+    currentSegments() { if (!this.editableSegments)
+        this.editableSegments = this.segments.map(s => ({ ...s, a: [...s.a], b: [...s.b] })); return this.editableSegments; }
+    clone() { return this.currentSegments().map(s => ({ ...s, a: [...s.a], b: [...s.b] })); }
+    snapshot() { this.history.push(this.clone()); if (this.history.length > 60)
+        this.history.shift(); this.future = []; }
+    loadLocal() { try {
+        const raw = localStorage.getItem(this.storageKey);
+        if (!raw)
+            return;
+        const value = JSON.parse(raw);
+        if (Array.isArray(value) && value.length < 500 && value.every((s) => Array.isArray(s.a) && Array.isArray(s.b) && s.a.length === 2 && s.b.length === 2 && [...s.a, ...s.b].every((n) => typeof n === 'number' && Number.isFinite(n))))
+            this.editableSegments = value;
+    }
+    catch { /* Keep default geometry. */ } }
+    status(message) { const el = this.shadowRoot?.querySelector('#studio-status'); if (el)
+        el.textContent = message; }
+    showWall() {
+        const fields = this.shadowRoot.querySelector('#wall-fields');
+        const seg = this.currentSegments()[this.selectedWall];
+        fields.hidden = !seg;
+        if (!seg) {
+            this.status('Selecione uma parede na planta.');
+            return;
+        }
+        for (const [id, v] of [['ax', seg.a[0]], ['ay', seg.a[1]], ['bx', seg.b[0]], ['by', seg.b[1]]])
+            this.shadowRoot.querySelector('#' + id).value = String(v);
+        this.shadowRoot.querySelector('#kind').value = seg.kind || 'wall';
+        this.status('Parede ' + (this.selectedWall + 1) + ' selecionada. Ajuste e clique em Aplicar.');
+    }
+    applyWall() {
+        if (this.selectedWall < 0)
+            return;
+        const read = (id) => Number(this.shadowRoot.querySelector('#' + id).value);
+        const nums = ['ax', 'ay', 'bx', 'by'].map(read);
+        if (nums.some(n => !Number.isFinite(n) || n < 0 || n > 1000)) {
+            this.status('Use coordenadas entre 0 e 1000.');
+            return;
+        }
+        const kind = this.shadowRoot.querySelector('#kind').value;
+        this.snapshot();
+        const s = this.currentSegments()[this.selectedWall];
+        s.a = [nums[0], nums[1]];
+        s.b = [nums[2], nums[3]];
+        s.kind = kind === 'wall' ? undefined : kind;
+        this.rebuild();
+        this.showWall();
+        this.status('Parede alterada. Clique em Salvar local para persistir.');
+    }
+    rebuild() {
+        for (const g of this.geometries)
+            g.dispose();
+        for (const m of this.materials)
+            m.dispose();
+        this.geometries = [];
+        this.materials = [];
+        this.scene.children.filter(o => o instanceof Mesh).forEach(o => this.scene.remove(o));
+        this.walls = [];
+        this.selectable = [];
+        this.build();
+        this.walls.forEach(w => w.visible = this.wallsVisible);
     }
     setView(mode) {
         this.viewMode = mode;
@@ -50693,6 +50828,16 @@ class ControlRoomApartment3D extends HTMLElement {
         this.mouse.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
         this.raycaster.setFromCamera(this.mouse, this.camera);
         const hit = this.raycaster.intersectObjects(this.selectable, false)[0];
+        if (this.editor) {
+            if (hit?.object.userData.wallIndex !== undefined) {
+                this.selectedWall = hit.object.userData.wallIndex;
+                this.rebuild();
+                this.showWall();
+            }
+            else
+                this.status('Clique sobre uma parede para selecioná-la.');
+            return;
+        }
         const name = hit?.object.userData.room;
         if (name) {
             this.focusRoom = name;
