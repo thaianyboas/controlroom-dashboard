@@ -18,6 +18,10 @@ export class ControlRoomApartment3D extends HTMLElement {
   private selectedWall=-1;
   private history:Segment[][]=[];
   private future:Segment[][]=[];
+  private wallDrag?:{index:number;mode:'move'|'a'|'b';start:Pt;original:Segment};
+  private pixelsPerMeter=100;
+  private unit:'m'|'cm'|'ft'='m';
+  private readonly settingsKey='controlroom-apartment-studio-units-v1';
   private readonly storageKey='controlroom-apartment-studio-v1';
   private editableSegments?:Segment[];
   private focusRoom?:string;
@@ -100,21 +104,28 @@ export class ControlRoomApartment3D extends HTMLElement {
       .studio input,.studio select{width:100%;box-sizing:border-box;background:#242930;color:#fff;border:1px solid #ffffff35;border-radius:8px;padding:7px;margin:3px 0 8px;font:inherit}
       .studio label{display:block;color:#d5d1c9;font-size:11px}
       .studio button{padding:7px 9px;font-size:11px}
+      .studio .measure{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .studio .tip{background:#26332f;border:1px solid #5b8c77;border-radius:9px;padding:9px}
       .studio .danger{border-color:#b66a6a;color:#ffcccc}
       .roomname{position:absolute;left:18px;bottom:45px;color:#f3ece3;font-size:12px;z-index:2;pointer-events:none}
       button{border:1px solid #ffffff33;border-radius:10px;background:#16181dcc;color:#eee;padding:9px 12px;font:inherit;cursor:pointer;backdrop-filter:blur(12px)}button:hover{background:#343741}
       @media(max-width:540px){.hint{display:none}.toolbar{right:9px;bottom:9px;max-width:95%}.label{left:12px;top:12px}.modes{top:58px;left:10px;right:auto}}
-    </style><div class="stage"></div><div class="label"><b>Living Spaces · Architektur</b><span>V61 · Floor Studio · Grundrissprüfung</span></div><div class="hint">Ziehen: drehen · Scrollen: zoomen · Raum anklicken: fokussieren</div><div class="roomname" id="roomname">Gesamte Wohnung</div><div class="studio" id="studio">
-      <h3>ControlRoom Floor Studio · V61</h3>
-      <p>Selecione uma parede no modo Planta. Ajuste suas extremidades em coordenadas da planta. Alterações são salvas apenas neste navegador.</p>
+    </style><div class="stage"></div><div class="label"><b>Living Spaces · Architektur</b><span>V62 · Floor Studio · Drag & Maße</span></div><div class="hint">Ziehen: drehen · Scrollen: zoomen · Raum anklicken: fokussieren</div><div class="roomname" id="roomname">Gesamte Wohnung</div><div class="studio" id="studio">
+      <h3>ControlRoom Floor Studio · V62</h3>
+      <p>Na vista Planta: arraste o meio da parede para mover. Arraste uma ponta para aumentar, diminuir ou girar. Também é possível digitar medidas. Salvamento local neste navegador.</p>
       <div id="wall-fields" hidden>
         <label>Início X <input id="ax" type="number" step="1"></label>
         <label>Início Y <input id="ay" type="number" step="1"></label>
         <label>Fim X <input id="bx" type="number" step="1"></label>
         <label>Fim Y <input id="by" type="number" step="1"></label>
+        <div class="measure"><label>Comprimento <input id="length" type="number" min="0.01" step="0.01"></label><label>Unidade<select id="units"><option value="m">Metros (m)</option><option value="cm">Centímetros (cm)</option><option value="ft">Pés (ft)</option></select></label></div>
+        <p>O comprimento digitado ajusta a ponta final, mantendo a direção da parede.</p>
         <label>Tipo<select id="kind"><option value="wall">Parede</option><option value="window">Janela</option><option value="door">Porta</option><option value="opening">Abertura</option></select></label>
         <div class="actions"><button id="apply-wall">Aplicar</button><button id="delete-wall" class="danger">Excluir</button></div>
       </div>
+      <div class="tip">🖱️ Clique e arraste a parede. Perto das pontas: redimensionar. No centro: mover. O comprimento aparece em tempo real.</div>
+      <label>Escala da planta — unidades do desenho por metro <input id="scale" type="number" min="1" max="1000" step="1" value="100"></label>
+      <p>Calibre a escala com uma parede cuja medida real você conhece. A planta original não tem medidas verificadas.</p>
       <div class="actions"><button id="new-wall">+ Parede</button><button id="undo-wall">↶ Desfazer</button><button id="redo-wall">↷ Refazer</button></div>
       <div class="actions"><button id="save-wall">Salvar local</button><button id="export-wall">Exportar JSON</button><button id="reset-wall" class="danger">Restaurar V58</button></div>
       <p id="studio-status">Clique em uma parede para editar.</p>
@@ -242,14 +253,71 @@ export class ControlRoomApartment3D extends HTMLElement {
   }
   private resize(){if(!this.renderer)return;const w=this.stage.clientWidth,h=this.stage.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);if(this.camera instanceof THREE.PerspectiveCamera){this.camera.aspect=w/h;this.camera.updateProjectionMatrix();}this.updateCamera();}
   private loop=()=>{if(!this.renderer)return;this.frame=requestAnimationFrame(this.loop);this.renderer.render(this.scene,this.camera);};
-  private down=(e:PointerEvent)=>{this.dragging=true;this.moved=false;this.pointer={x:e.clientX,y:e.clientY};this.stage.setPointerCapture(e.pointerId);};
-  private move=(e:PointerEvent)=>{if(!this.dragging)return;const dx=e.clientX-this.pointer.x,dy=e.clientY-this.pointer.y;if(Math.abs(dx)+Math.abs(dy)>2)this.moved=true;if(this.viewMode==='top'){
-      const scale=16*(this.radius/23)/(this.stage.clientHeight||500);
-      this.center.x-=dx*scale;this.center.z-=dy*scale;
-    }else{
-      this.angle-=dx*.007;this.elevation=THREE.MathUtils.clamp(this.elevation+dy*.006,this.viewMode==='inside'?1.1:.24,1.49);
-    }this.pointer={x:e.clientX,y:e.clientY};this.updateCamera();};
-  private up=(e:PointerEvent)=>{if(!this.dragging)return;this.dragging=false;if(!this.moved)this.pick(e);};
+   private pointerPlan(e:PointerEvent):Pt|undefined{
+     const rect=this.renderer?.domElement.getBoundingClientRect();if(!rect||!rect.width||!rect.height)return;
+     const ndc=new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1);
+     const ray=new THREE.Raycaster();ray.setFromCamera(ndc,this.camera);
+     const hit=new THREE.Vector3();if(!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),hit))return;
+     return [hit.x/.024+272,hit.z/.024+354];
+   }
+   private closestWall(p:Pt):{index:number;mode:'move'|'a'|'b'}|undefined{
+     const threshold=14*16*(this.radius/23)/(this.stage.clientHeight||500)/.024;
+     let best=threshold,index=-1,mode:'move'|'a'|'b'='move';
+     this.currentSegments().forEach((s,i)=>{
+       const dx=s.b[0]-s.a[0],dy=s.b[1]-s.a[1],len2=dx*dx+dy*dy;if(len2<.0001)return;
+       const t=Math.max(0,Math.min(1,((p[0]-s.a[0])*dx+(p[1]-s.a[1])*dy)/len2));
+       const dist=Math.hypot(p[0]-s.a[0]-t*dx,p[1]-s.a[1]-t*dy);
+       if(dist<best){best=dist;index=i;mode=t<.17?'a':t>.83?'b':'move';}
+     });
+     return index>=0?{index,mode}:undefined;
+   }
+   private down=(e:PointerEvent)=>{
+     this.dragging=true;this.moved=false;this.pointer={x:e.clientX,y:e.clientY};
+     if(this.editor&&this.viewMode==='top'){
+       const point=this.pointerPlan(e);const target=point&&this.closestWall(point);
+       if(point&&target){
+         this.selectedWall=target.index;this.snapshot();
+         const seg=this.currentSegments()[target.index];
+         this.wallDrag={index:target.index,mode:target.mode,start:point,original:{...seg,a:[...seg.a] as Pt,b:[...seg.b] as Pt}};
+         this.rebuild();this.showWall();
+       }
+     }
+     this.stage.setPointerCapture(e.pointerId);
+   };
+   private move=(e:PointerEvent)=>{
+     if(!this.dragging)return;
+     const dx=e.clientX-this.pointer.x,dy=e.clientY-this.pointer.y;
+     if(Math.abs(dx)+Math.abs(dy)>2)this.moved=true;
+     if(this.wallDrag){
+       const point=this.pointerPlan(e);
+       if(point){
+         const dX=point[0]-this.wallDrag.start[0],dY=point[1]-this.wallDrag.start[1];
+         const seg=this.currentSegments()[this.wallDrag.index],orig=this.wallDrag.original;
+         if(this.wallDrag.mode==='move'){
+           seg.a=[orig.a[0]+dX,orig.a[1]+dY];seg.b=[orig.b[0]+dX,orig.b[1]+dY];
+         }else if(this.wallDrag.mode==='a')seg.a=[orig.a[0]+dX,orig.a[1]+dY];
+         else seg.b=[orig.b[0]+dX,orig.b[1]+dY];
+         this.rebuild();this.showWall();
+         this.status('Arrastando parede '+(this.selectedWall+1)+' · '+this.lengthInUnit(seg).toFixed(2)+' '+this.unit);
+       }
+     }else if(this.viewMode==='top'){
+       const scale=16*(this.radius/23)/(this.stage.clientHeight||500);
+       this.center.x-=dx*scale;this.center.z-=dy*scale;
+     }else{
+       this.angle-=dx*.007;this.elevation=THREE.MathUtils.clamp(this.elevation+dy*.006,this.viewMode==='inside'?1.1:.24,1.49);
+     }
+     this.pointer={x:e.clientX,y:e.clientY};this.updateCamera();
+   };
+   private up=(e:PointerEvent)=>{
+     if(!this.dragging)return;
+     this.dragging=false;
+     if(this.wallDrag){
+       if(!this.moved){this.history.pop();this.future=[];}
+       else this.status('Parede ajustada. Clique em Salvar local para guardar.');
+       this.wallDrag=undefined;return;
+     }
+     if(!this.moved)this.pick(e);
+   };
   private pick(e:PointerEvent){if(!this.renderer)return;const r=this.renderer.domElement.getBoundingClientRect();this.mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);this.raycaster.setFromCamera(this.mouse,this.camera);const hit=this.raycaster.intersectObjects(this.selectable,false)[0];if(this.editor){
       if(hit?.object.userData.wallIndex!==undefined){
         this.selectedWall=hit.object.userData.wallIndex as number;
