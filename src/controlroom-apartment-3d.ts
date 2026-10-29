@@ -158,12 +158,21 @@ export class ControlRoomApartment3D extends HTMLElement {
       this.shadowRoot!.querySelector('[data-studio]')!.textContent=this.editor?'✕ Fechar Studio':'✎ Studio';
     });
     const bind=(id:string,fn:()=>void)=>this.shadowRoot!.querySelector('#'+id)!.addEventListener('click',fn);
+    const units=this.shadowRoot!.querySelector<HTMLSelectElement>('#units')!;
+    const scale=this.shadowRoot!.querySelector<HTMLInputElement>('#scale')!;
+    try { const settings=JSON.parse(localStorage.getItem(this.settingsKey)||'{}');
+      if(['m','cm','ft'].includes(settings.unit))this.unit=settings.unit;
+      if(Number.isFinite(settings.pixelsPerMeter)&&settings.pixelsPerMeter>0)this.pixelsPerMeter=settings.pixelsPerMeter;
+    } catch {/* Use defaults */}
+    units.value=this.unit;scale.value=String(this.pixelsPerMeter);
+    units.addEventListener('change',()=>{this.unit=units.value as 'm'|'cm'|'ft';this.showWall();});
+    scale.addEventListener('change',()=>{const v=Number(scale.value);if(Number.isFinite(v)&&v>0&&v<=1000){this.pixelsPerMeter=v;this.showWall();}else scale.value=String(this.pixelsPerMeter);});
     bind('apply-wall',()=>this.applyWall());
     bind('delete-wall',()=>{if(this.selectedWall<0)return;this.snapshot();this.currentSegments().splice(this.selectedWall,1);this.selectedWall=-1;this.rebuild();this.showWall();});
     bind('new-wall',()=>{this.snapshot();this.currentSegments().push({a:[260,380],b:[300,380]});this.selectedWall=this.currentSegments().length-1;this.rebuild();this.showWall();});
     bind('undo-wall',()=>{if(!this.history.length)return;this.future.push(this.clone());this.editableSegments=this.history.pop();this.selectedWall=-1;this.rebuild();this.showWall();});
     bind('redo-wall',()=>{if(!this.future.length)return;this.history.push(this.clone());this.editableSegments=this.future.pop();this.selectedWall=-1;this.rebuild();this.showWall();});
-    bind('save-wall',()=>{try{localStorage.setItem(this.storageKey,JSON.stringify(this.currentSegments()));this.status('Salvo neste navegador.');}catch{this.status('Não foi possível salvar no navegador.');}});
+    bind('save-wall',()=>{try{localStorage.setItem(this.storageKey,JSON.stringify(this.currentSegments()));localStorage.setItem(this.settingsKey,JSON.stringify({unit:this.unit,pixelsPerMeter:this.pixelsPerMeter}));this.status('Salvo neste navegador.');}catch{this.status('Não foi possível salvar no navegador.');}});
     bind('export-wall',()=>{const blob=new Blob([JSON.stringify(this.currentSegments(),null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='controlroom-apartment-walls.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);this.status('Backup JSON exportado.');});
     bind('reset-wall',()=>{if(!confirm('Restaurar todas as paredes originais da V58?'))return;this.snapshot();this.editableSegments=this.segments.map(s=>({...s,a:[...s.a],b:[...s.b]}));this.selectedWall=-1;this.rebuild();this.showWall();this.status('Base V58 restaurada. Clique em Salvar local para guardar.');});
     this.loop();
@@ -212,7 +221,12 @@ export class ControlRoomApartment3D extends HTMLElement {
     if(!seg){this.status('Selecione uma parede na planta.');return;}
     for(const [id,v] of [['ax',seg.a[0]],['ay',seg.a[1]],['bx',seg.b[0]],['by',seg.b[1]]] as const)(this.shadowRoot!.querySelector('#'+id) as HTMLInputElement).value=String(v);
     (this.shadowRoot!.querySelector('#kind') as HTMLSelectElement).value=seg.kind||'wall';
+    (this.shadowRoot!.querySelector('#length') as HTMLInputElement).value=this.lengthInUnit(seg).toFixed(2);
     this.status('Parede '+(this.selectedWall+1)+' selecionada. Ajuste e clique em Aplicar.');
+  }
+  private lengthInUnit(seg:Segment):number{
+    const meters=Math.hypot(seg.b[0]-seg.a[0],seg.b[1]-seg.a[1])/this.pixelsPerMeter;
+    return this.unit==='cm'?meters*100:this.unit==='ft'?meters/0.3048:meters;
   }
   private applyWall(){
     if(this.selectedWall<0)return;
@@ -220,6 +234,18 @@ export class ControlRoomApartment3D extends HTMLElement {
     const nums=['ax','ay','bx','by'].map(read);
     if(nums.some(n=>!Number.isFinite(n)||n<0||n>1000)){this.status('Use coordenadas entre 0 e 1000.');return;}
     const kind=(this.shadowRoot!.querySelector('#kind') as HTMLSelectElement).value;
+    const lengthInput=this.shadowRoot!.querySelector<HTMLInputElement>('#length')!;
+    const targetLength=Number(lengthInput.value);
+    if(!Number.isFinite(targetLength)||targetLength<=0){this.status('Digite um comprimento maior que zero.');return;}
+    const original=this.currentSegments()[this.selectedWall];
+    const displayedLength=this.lengthInUnit(original);
+    if(Math.abs(targetLength-displayedLength)>0.011){
+      const lengthPixels=this.unit==='m'?targetLength*this.pixelsPerMeter:this.unit==='cm'?targetLength*this.pixelsPerMeter/100:targetLength*this.pixelsPerMeter*0.3048;
+      const dx=nums[2]-nums[0],dy=nums[3]-nums[1],distance=Math.hypot(dx,dy);
+      if(distance<0.00001){this.status('A parede precisa ter uma direção para alterar seu comprimento.');return;}
+      nums[2]=nums[0]+dx/distance*lengthPixels;
+      nums[3]=nums[1]+dy/distance*lengthPixels;
+    }
     this.snapshot();
     const s=this.currentSegments()[this.selectedWall];s.a=[nums[0],nums[1]];s.b=[nums[2],nums[3]];
     s.kind=kind==='wall'?undefined:kind as Segment['kind'];
